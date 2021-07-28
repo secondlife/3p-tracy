@@ -67,11 +67,15 @@ pushd "$source_dir"
             make install
 
             mkdir -p "$stage_dir/lib/release"
-            mv "$stage_dir/lib/libtracy.a" "$stage_dir/lib/release/libtracy.a"
+            mv "$stage_dir/lib/libtracy.a" "$stage_dir/lib/release"
 
-            mkdir -p "$stage_dir/include/tracy"
-            cp Tracy.hpp "$stage_dir/include/tracy/"
-			cp TracyOpenGL.hpp "$stage_dir/include/tracy/"
+            mkdir -p "$stage_dir/include/tracy/common"
+            cp common/*.hpp "$stage_dir/include/tracy/common"
+            cp common/*.h "$stage_dir/include/tracy/common"
+
+            mkdir -p "$stage_dir/include/tracy/client"
+            cp client/*.hpp "$stage_dir/include/tracy/client"
+            cp client/*.h "$stage_dir/include/tracy/client"
 
             rm -r "$stage_dir/lib/cmake"
         ;;
