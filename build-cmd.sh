@@ -60,19 +60,30 @@ pushd "$source_dir"
     esac
 
 # Common code that copies headers to packages/include/
-# Tracy is "mostly" a header-only project -- it has a single .cpp file, TracyClient.cpp,
+# Tracy is "mostly" a header-only project -- it has a few .cpp files
+#    TracyClient.cpp
+#    client/*.cpp
+#    common/*.cpp
+#    libbacktrace/*.cpp
 # that needs to be included if not building/linking to a library.
-# The other .c files are for building the Tracy server which aren't needed here
+# The other .c/.cpp files are for building the Tracy server which aren't needed here.
 	mkdir -p "$stage_dir/include/tracy"
 	cp *.cpp "$stage_dir/include/tracy/"
 	cp *.hpp "$stage_dir/include/tracy/"
 	cp *.h   "$stage_dir/include/tracy/"
 
 	mkdir -p        "$stage_dir/include/tracy/common"
+	cp common/*.cpp "$stage_dir/include/tracy/common"
 	cp common/*.hpp "$stage_dir/include/tracy/common"
 	cp common/*.h   "$stage_dir/include/tracy/common"
 
 	mkdir -p        "$stage_dir/include/tracy/client"
+	cp common/*.cpp "$stage_dir/include/tracy/client"
+	cp client/*.hpp "$stage_dir/include/tracy/client"
+	cp client/*.h   "$stage_dir/include/tracy/client"
+
+	mkdir -p        "$stage_dir/include/tracy/libbacktrace"
+	cp common/*.cpp "$stage_dir/include/tracy/client"
 	cp client/*.hpp "$stage_dir/include/tracy/client"
 	cp client/*.h   "$stage_dir/include/tracy/client"
 popd
