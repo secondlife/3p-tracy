@@ -66,6 +66,7 @@ pushd "$source_dir"
 	mkdir -p "$stage_dir/include/tracy"
 	cp *.cpp "$stage_dir/include/tracy/"
 	cp *.hpp "$stage_dir/include/tracy/"
+	cp *.h   "$stage_dir/include/tracy/"
 
 	mkdir -p        "$stage_dir/include/tracy/common"
 	cp common/*.hpp "$stage_dir/include/tracy/common"
