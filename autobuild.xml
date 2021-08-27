@@ -60,7 +60,9 @@
           </map>
           <key>manifest</key>
           <array>
+            <string>include/tracy/*.cpp</string>
             <string>include/tracy/*.hpp</string>
+            <string>include/tracy/*.h</string>
             <string>include/tracy/common/*.hpp</string>
             <string>include/tracy/common/*.h</string>
             <string>include/tracy/client/*.hpp</string>
