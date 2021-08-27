@@ -78,14 +78,14 @@ pushd "$source_dir"
 	cp common/*.h   "$stage_dir/include/tracy/common"
 
 	mkdir -p        "$stage_dir/include/tracy/client"
-	cp common/*.cpp "$stage_dir/include/tracy/client"
+	cp client/*.cpp "$stage_dir/include/tracy/client"
 	cp client/*.hpp "$stage_dir/include/tracy/client"
 	cp client/*.h   "$stage_dir/include/tracy/client"
 
-	mkdir -p        "$stage_dir/include/tracy/libbacktrace"
-	cp common/*.cpp "$stage_dir/include/tracy/client"
-	cp client/*.hpp "$stage_dir/include/tracy/client"
-	cp client/*.h   "$stage_dir/include/tracy/client"
+	mkdir -p              "$stage_dir/include/tracy/libbacktrace"
+	cp libbacktrace/*.cpp "$stage_dir/include/tracy/libbacktrace"
+	cp libbacktrace/*.hpp "$stage_dir/include/tracy/libbacktrace"
+	cp libbacktrace/*.h   "$stage_dir/include/tracy/libbacktrace"
 popd
 
 # copy license file
