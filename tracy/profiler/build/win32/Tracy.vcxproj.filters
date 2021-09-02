@@ -147,6 +147,9 @@
     <ClCompile Include="..\..\src\HttpRequest.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\server\TracyStackFrames.cpp">
+      <Filter>server</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\imgui\imgui_tables.cpp">
       <Filter>imgui</Filter>
     </ClCompile>
@@ -245,12 +248,6 @@
     </ClCompile>
     <ClCompile Include="..\..\..\zstd\dictBuilder\zdict.c">
       <Filter>zstd\dictBuilder</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\common\TracyStackFrames.cpp">
-      <Filter>common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\server\TracyWeb.cpp">
-      <Filter>server</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -428,6 +425,9 @@
     <ClInclude Include="..\..\..\server\tracy_xxh3.h">
       <Filter>server</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\server\TracyYield.hpp">
+      <Filter>server</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\server\TracySort.hpp">
       <Filter>server</Filter>
     </ClInclude>
@@ -457,6 +457,9 @@
     </ClInclude>
     <ClInclude Include="..\..\src\HttpRequest.hpp">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\server\TracyStackFrames.hpp">
+      <Filter>server</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\server\TracySortedVector.hpp">
       <Filter>server</Filter>
@@ -574,15 +577,6 @@
     </ClInclude>
     <ClInclude Include="..\..\..\zstd\dictBuilder\divsufsort.h">
       <Filter>zstd\dictBuilder</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\common\TracyStackFrames.hpp">
-      <Filter>common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\common\TracyYield.hpp">
-      <Filter>common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\server\TracyWeb.hpp">
-      <Filter>server</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

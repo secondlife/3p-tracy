@@ -69,6 +69,9 @@
     <ClCompile Include="..\..\..\getopt\getopt.c">
       <Filter>getopt</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\server\TracyStackFrames.cpp">
+      <Filter>server</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\zstd\common\debug.c">
       <Filter>zstd\common</Filter>
     </ClCompile>
@@ -156,9 +159,6 @@
     <ClCompile Include="..\..\..\zstd\dictBuilder\zdict.c">
       <Filter>zstd\dictBuilder</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\common\TracyStackFrames.cpp">
-      <Filter>common</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\common\tracy_lz4.hpp">
@@ -235,6 +235,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\getopt\getopt.h">
       <Filter>getopt</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\server\TracyStackFrames.hpp">
+      <Filter>server</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\zstd\zstd.h">
       <Filter>zstd</Filter>
@@ -340,9 +343,6 @@
     </ClInclude>
     <ClInclude Include="..\..\..\zstd\zdict.h">
       <Filter>zstd</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\common\TracyStackFrames.hpp">
-      <Filter>common</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
