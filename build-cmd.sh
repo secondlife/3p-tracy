@@ -44,10 +44,10 @@ pushd "$source_dir"
             load_vsvars
 
             cmake . -G "$AUTOBUILD_WIN_CMAKE_GEN" -DCMAKE_C_FLAGS="$LL_BUILD_RELEASE"
-            build_sln "tracy.sln" "Release|$AUTOBUILD_WIN_VSPLATFORM" "tracy"
+            build_sln "tracy.sln" "Release|$AUTOBUILD_WIN_VSPLATFORM" "TracyClient"
 
             mkdir -p "$stage_dir/lib/release"
-            mv Release/tracy.lib "$stage_dir/lib/release"
+            mv Release/TracyClient.lib "$stage_dir/lib/release"
 
             mkdir -p "$stage_dir/include/tracy"
             cp *.hpp "$stage_dir/include/tracy/"
