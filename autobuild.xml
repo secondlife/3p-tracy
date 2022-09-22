@@ -4,7 +4,7 @@
     <key>package_description</key>
     <map>
       <key>canonical_repo</key>
-      <string>https://bitbucket.org/lindenlab/3p-tracy</string>
+      <string>https://github.com/secondlife/3p-tracy</string>
       <key>copyright</key>
       <string>Copyright (c) 2017-2021, Bartosz Taudul (wolf@nereid.pl)</string>
       <key>description</key>
@@ -35,7 +35,7 @@
                 <key>command</key>
                 <string>bash</string>
               </map>
-               <key>default</key>
+              <key>default</key>
               <string>True</string>
               <key>name</key>
               <string>RelWithDebInfo</string>
@@ -52,7 +52,7 @@
                 <key>command</key>
                 <string>bash</string>
               </map>
-               <key>default</key>
+              <key>default</key>
               <boolean>true</boolean>
               <key>name</key>
               <string>default</string>
@@ -104,7 +104,7 @@
                 <key>command</key>
                 <string>bash</string>
               </map>
-               <key>default</key>
+              <key>default</key>
               <string>True</string>
               <key>name</key>
               <string>RelWithDebInfo</string>
