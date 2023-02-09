@@ -28,7 +28,8 @@ if(MSVC)
 	# Make tracy minimally promiscuous - local profiling only
 	add_compile_definitions(TRACY_ENABLE TRACY_NO_BROADCAST TRACY_ONLY_LOCALHOST TRACY_ONLY_IPV4)
 else()
-    add_compile_options(-Wall -Wextra -Wshadow -Wno-missing-field-initializers -Werror)
+	add_compile_definitions(TRACY_ENABLE TRACY_NO_BROADCAST TRACY_ONLY_LOCALHOST TRACY_ONLY_IPV4)
+	add_compile_options(-std=c++11 -Wall -Wextra -Wno-missing-field-initializers -Wno-unused-parameter -Werror)
 endif()
 
 if(TRACY_BUILD_SHARED_LIBS)

@@ -35,7 +35,7 @@
                 <key>command</key>
                 <string>bash</string>
               </map>
-               <key>default</key>
+              <key>default</key>
               <string>True</string>
               <key>name</key>
               <string>RelWithDebInfo</string>
@@ -52,7 +52,7 @@
                 <key>command</key>
                 <string>bash</string>
               </map>
-               <key>default</key>
+              <key>default</key>
               <boolean>true</boolean>
               <key>name</key>
               <string>default</string>
@@ -75,6 +75,25 @@
           </array>
           <key>name</key>
           <string>common</string>
+        </map>
+        <key>darwin64</key>
+        <map>
+          <key>configurations</key>
+          <map>
+            <key>RelWithDebInfo</key>
+            <map>
+              <key>default</key>
+              <string>True</string>
+              <key>name</key>
+              <string>RelWithDebInfo</string>
+            </map>
+          </map>
+          <key>manifest</key>
+          <array>
+            <string>lib/libtracy.a</string>
+          </array>
+          <key>name</key>
+          <string>darwin64</string>
         </map>
         <key>linux</key>
         <map>
@@ -111,7 +130,7 @@
                 <key>command</key>
                 <string>bash</string>
               </map>
-               <key>default</key>
+              <key>default</key>
               <string>True</string>
               <key>name</key>
               <string>RelWithDebInfo</string>

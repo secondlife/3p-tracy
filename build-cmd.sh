@@ -54,38 +54,19 @@ pushd "$source_dir"
 
         darwin*)
             cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+	    cmake --build .
+
+            mkdir -p "$stage_dir/lib/release"
+            cp -a libtracy.a "$stage_dir/lib/release"
 
 # See common code below that copies haders to packages/include/
         ;;
     esac
 
 # Common code that copies headers to packages/include/
-# Tracy is "mostly" a header-only project -- it has a few .cpp files
-#    TracyClient.cpp
-#    client/*.cpp
-#    common/*.cpp
-#    libbacktrace/*.cpp
-# that needs to be included if not building/linking to a library.
-# The other .c/.cpp files are for building the Tracy server which aren't needed here.
 	mkdir -p "$stage_dir/include/tracy"
-	cp *.cpp "$stage_dir/include/tracy/"
 	cp *.hpp "$stage_dir/include/tracy/"
 	cp *.h   "$stage_dir/include/tracy/"
-
-	mkdir -p        "$stage_dir/include/tracy/common"
-	cp common/*.cpp "$stage_dir/include/tracy/common"
-	cp common/*.hpp "$stage_dir/include/tracy/common"
-	cp common/*.h   "$stage_dir/include/tracy/common"
-
-	mkdir -p        "$stage_dir/include/tracy/client"
-	cp client/*.cpp "$stage_dir/include/tracy/client"
-	cp client/*.hpp "$stage_dir/include/tracy/client"
-	cp client/*.h   "$stage_dir/include/tracy/client"
-
-	mkdir -p              "$stage_dir/include/tracy/libbacktrace"
-	cp libbacktrace/*.cpp "$stage_dir/include/tracy/libbacktrace"
-	cp libbacktrace/*.hpp "$stage_dir/include/tracy/libbacktrace"
-	cp libbacktrace/*.h   "$stage_dir/include/tracy/libbacktrace"
 popd
 
 # copy license file
