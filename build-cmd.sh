@@ -61,6 +61,16 @@ pushd "$source_dir"
 
 # See common code below that copies haders to packages/include/
         ;;
+
+        linux*)
+            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+            cmake --build .
+
+            mkdir -p "$stage_dir/lib/release"
+            cp -a libtracy.a "$stage_dir/lib/release"
+
+# See common code below that copies haders to packages/include/
+        ;;
     esac
 
 # Common code that copies headers to packages/include/
