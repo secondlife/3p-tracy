@@ -105,6 +105,10 @@
               <string>default</string>
             </map>
           </map>
+          <key>manifest</key>
+          <array>
+              <string>lib/release/libTracyClient.a</string>
+          </array>
           <key>name</key>
           <string>linux</string>
         </map>
