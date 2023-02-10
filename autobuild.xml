@@ -86,7 +86,7 @@
           </map>
           <key>manifest</key>
           <array>
-              <string>lib/release/libtracy.a</string>
+              <string>lib/release/libTracyClient.a</string>
           </array>
           <key>name</key>
           <string>darwin64</string>

@@ -57,7 +57,7 @@ pushd "$source_dir"
             cmake --build .
 
             mkdir -p "$stage_dir/lib/release"
-            cp -a libtracy.a "$stage_dir/lib/release"
+            cp -a libTracyClient.a "$stage_dir/lib/release"
 
 # See common code below that copies haders to packages/include/
         ;;
@@ -67,7 +67,7 @@ pushd "$source_dir"
             cmake --build .
 
             mkdir -p "$stage_dir/lib/release"
-            cp -a libtracy.a "$stage_dir/lib/release"
+            cp -a libTracyClient.a "$stage_dir/lib/release"
 
 # See common code below that copies haders to packages/include/
         ;;
