@@ -53,7 +53,7 @@ pushd "$source_dir"
         ;;
 
         darwin*)
-            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+            cmake . -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
 	    cmake --build .
 
             mkdir -p "$stage_dir/lib/release"

@@ -60,16 +60,12 @@
           </map>
           <key>manifest</key>
           <array>
-            <string>include/tracy/*.cpp</string>
             <string>include/tracy/*.hpp</string>
             <string>include/tracy/*.h</string>
-            <string>include/tracy/common/*.cpp</string>
             <string>include/tracy/common/*.hpp</string>
             <string>include/tracy/common/*.h</string>
-            <string>include/tracy/client/*.cpp</string>
             <string>include/tracy/client/*.hpp</string>
             <string>include/tracy/client/*.h</string>
-            <string>include/tracy/libbacktrace/*.cpp</string>
             <string>include/tracy/libbacktrace/*.hpp</string>
             <string>include/tracy/libbacktrace/*.h</string>
           </array>
@@ -90,7 +86,7 @@
           </map>
           <key>manifest</key>
           <array>
-            <string>lib/libtracy.a</string>
+              <string>lib/release/libtracy.a</string>
           </array>
           <key>name</key>
           <string>darwin64</string>
