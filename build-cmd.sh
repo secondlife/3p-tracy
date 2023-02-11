@@ -49,33 +49,46 @@ pushd "$source_dir"
             mkdir -p "$stage_dir/lib/release"
             mv Release/TracyClient.lib "$stage_dir/lib/release"
 
-            mkdir -p "$stage_dir/include/tracy"
-            cp *.hpp "$stage_dir/include/tracy/"
-
-            mkdir -p "$stage_dir/include/tracy/common"
-            cp common/*.hpp "$stage_dir/include/tracy/common"
-            cp common/*.h "$stage_dir/include/tracy/common"
-
-            mkdir -p "$stage_dir/include/tracy/client"
-            cp client/*.hpp "$stage_dir/include/tracy/client"
-            cp client/*.h "$stage_dir/include/tracy/client"
+# See common code below that copies haders to packages/include/
         ;;
 
         darwin*)
-			cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
-            make
-            make install
+            cmake . -DCMAKE_OSX_ARCHITECTURES="x86_64" -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+            cmake --build .
 
             mkdir -p "$stage_dir/lib/release"
-            mv "$stage_dir/lib/libtracy.a" "$stage_dir/lib/release/libtracy.a"
+            cp -a libTracyClient.a "$stage_dir/lib/release"
 
-            mkdir -p "$stage_dir/include/tracy"
-            cp Tracy.hpp "$stage_dir/include/tracy/"
-			cp TracyOpenGL.hpp "$stage_dir/include/tracy/"
+# See common code below that copies haders to packages/include/
+        ;;
 
-            rm -r "$stage_dir/lib/cmake"
+        linux*)
+            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+            cmake --build .
+
+            mkdir -p "$stage_dir/lib/release"
+            cp -a libTracyClient.a "$stage_dir/lib/release"
+
+# See common code below that copies haders to packages/include/
         ;;
     esac
+
+# Common code that copies headers to packages/include/
+	mkdir -p "$stage_dir/include/tracy"
+	cp *.hpp "$stage_dir/include/tracy/"
+	cp *.h   "$stage_dir/include/tracy/"
+
+    mkdir -p        "$stage_dir/include/tracy/common"
+    cp common/*.hpp "$stage_dir/include/tracy/common"
+    cp common/*.h   "$stage_dir/include/tracy/common"
+
+    mkdir -p        "$stage_dir/include/tracy/client"
+    cp client/*.hpp "$stage_dir/include/tracy/client"
+    cp client/*.h   "$stage_dir/include/tracy/client"
+
+    mkdir -p              "$stage_dir/include/tracy/libbacktrace"
+    cp libbacktrace/*.hpp "$stage_dir/include/tracy/libbacktrace"
+    cp libbacktrace/*.h   "$stage_dir/include/tracy/libbacktrace"
 popd
 
 # copy license file
