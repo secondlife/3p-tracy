@@ -33,26 +33,28 @@ struct MicroArchUx
 };
 
 static constexpr MicroArchUx s_uArchUx[] = {
-    { "Conroe", "Core 2 Duo E6750", "CON" },
-    { "Wolfdale", "Core 2 Duo E8400", "WOL" },
-    { "Nehalem", "Core i5-750", "NHM" },
-    { "Westmere", "Core i5-650", "WSM" },
-    { "Sandy Bridge", "Core i7-2600", "SNB" },
-    { "Ivy Bridge", "Core i5-3470", "IVB" },
-    { "Haswell", "Xeon E3-1225 v3", "HSW" },
-    { "Broadwell", "Core i5-5200U", "BDW" },
-    { "Skylake", "Core i7-6500U", "SKL" },
-    { "Skylake-X", "Core i9-7900X", "SKX" },
-    { "Kaby Lake", "Core i7-7700", "KBL" },
-    { "Coffee Lake", "Core i7-8700K", "CFL" },
-    { "Cannon Lake", "Core i3-8121U", "CNL" },
+    { "AMD Zen 3", "Ryzen 5 5600X", "ZEN3" },
+    { "AMD Zen 2", "Ryzen 7 3700X", "ZEN2" },
+    { "AMD Zen+", "Ryzen 5 2600", "ZEN+" },
+    { "Alder Lake P", "Core i5-12600K", "ADL-P" },
+    { "Alder Lake E", "Core i5-12600K", "ADL-E" },
+    { "Rocket Lake", "Core i9-11900", "RKL" },
+    { "Tiger Lake", "Core i7-1165G7", "TGL" },
     { "Ice Lake", "Core i5-1035G1", "ICL" },
     { "Cascade Lake", "Core i9-10980XE", "CLX" },
-    { "Tiger Lake", "Core i7-1165G7", "TGL" },
-    { "Rocket Lake", "Core i9-11900", "RKL" },
-    { "AMD Zen+", "Ryzen 5 2600", "ZEN+" },
-    { "AMD Zen 2", "Ryzen 7 3700X", "ZEN2" },
-    { "AMD Zen 3", "Ryzen 5 5600X", "ZEN3" },
+    { "Cannon Lake", "Core i3-8121U", "CNL" },
+    { "Coffee Lake", "Core i7-8700K", "CFL" },
+    { "Kaby Lake", "Core i7-7700", "KBL" },
+    { "Skylake-X", "Core i9-7900X", "SKX" },
+    { "Skylake", "Core i7-6500U", "SKL" },
+    { "Broadwell", "Core i5-5200U", "BDW" },
+    { "Haswell", "Xeon E3-1225 v3", "HSW" },
+    { "Ivy Bridge", "Core i5-3470", "IVB" },
+    { "Sandy Bridge", "Core i7-2600", "SNB" },
+    { "Westmere", "Core i5-650", "WSM" },
+    { "Nehalem", "Core i5-750", "NHM" },
+    { "Wolfdale", "Core 2 Duo E8400", "WOL" },
+    { "Conroe", "Core 2 Duo E6750", "CON" },
 };
 
 static constexpr const char* s_regNameX86[] = {
@@ -72,8 +74,8 @@ static SourceView::RegsX86 s_regMapX86[X86_REG_ENDING];
 static constexpr const char* s_CostName[] = {
     "Sample count",
     "Cycles",
-    "Slow branches",
-    "Slow cache",
+    "Branch impact",
+    "Cache impact",
     "Retirements",
     "Branches taken",
     "Branch miss",
@@ -82,6 +84,12 @@ static constexpr const char* s_CostName[] = {
 };
 
 static constexpr SourceView::CostType s_costSeparateAfter = SourceView::CostType::SlowCache;
+
+struct ChildStat
+{
+    uint64_t addr;
+    uint32_t count;
+};
 
 
 static size_t CountHwSamples( const SortedVector<Int48, Int48Sort>& vec, const Range& range )
@@ -157,12 +165,61 @@ static void PrintHwSampleTooltip( size_t cycles, size_t retired, size_t cacheRef
     }
 }
 
+static void PrintSourceFragment( const SourceContents& src, uint32_t srcline, int pre = 4, int post = 3 )
+{
+    auto& lines = src.get();
+    const int start = std::max( 0, (int)srcline - pre );
+    const int end = std::min<int>( src.get().size(), srcline + post );
+    bool first = true;
+    int bottomEmpty = 0;
+    for( int i=start; i<end; i++ )
+    {
+        auto& line = lines[i];
+        if( line.begin == line.end )
+        {
+            if( !first ) bottomEmpty++;
+        }
+        else
+        {
+            first = false;
+            while( bottomEmpty > 0 )
+            {
+                ImGui::TextUnformatted( "" );
+                bottomEmpty--;
+            }
 
-enum { JumpSeparation = 6 };
+            auto ptr = line.begin;
+            auto it = line.tokens.begin();
+            while( ptr < line.end )
+            {
+                if( it == line.tokens.end() )
+                {
+                    ImGui::TextUnformatted( ptr, line.end );
+                    ImGui::SameLine( 0, 0 );
+                    break;
+                }
+                if( ptr < it->begin )
+                {
+                    ImGui::TextUnformatted( ptr, it->begin );
+                    ImGui::SameLine( 0, 0 );
+                }
+                TextColoredUnformatted( i == srcline-1 ? SyntaxColors[(int)it->color] : SyntaxColorsDimmed[(int)it->color], it->begin, it->end );
+                ImGui::SameLine( 0, 0 );
+                ptr = it->end;
+                ++it;
+            }
+            ImGui::ItemSize( ImVec2( 0, 0 ), 0 );
+        }
+    }
+}
+
+
+enum { JumpSeparationBase = 6 };
 enum { JumpArrowBase = 9 };
 
-SourceView::SourceView( ImFont* font, GetWindowCallback gwcb )
-    : m_font( font )
+SourceView::SourceView( GetWindowCallback gwcb )
+    : m_font( nullptr )
+    , m_smallFont( nullptr )
     , m_symAddr( 0 )
     , m_targetAddr( 0 )
     , m_targetLine( 0 )
@@ -173,13 +230,15 @@ SourceView::SourceView( ImFont* font, GetWindowCallback gwcb )
     , m_codeLen( 0 )
     , m_highlightAddr( 0 )
     , m_asmCountBase( -1 )
-    , m_asmRelative( false )
+    , m_asmRelative( true )
     , m_asmBytes( false )
     , m_asmShowSourceLocation( true )
     , m_calcInlineStats( true )
     , m_atnt( false )
     , m_childCalls( false )
+    , m_childCallList( false )
     , m_hwSamples( true )
+    , m_hwSamplesRelative( true )
     , m_cost( CostType::SampleCount )
     , m_showJumps( true )
     , m_cpuArch( CpuArchUnknown )
@@ -418,7 +477,9 @@ static constexpr CpuIdMap s_cpuIdMap[] = {
     { PackCpuInfo( 0xA00F80 ), "ZEN3" },
     { PackCpuInfo( 0xA20F10 ), "ZEN3" },
     { PackCpuInfo( 0xA30F00 ), "ZEN3" },
+    { PackCpuInfo( 0xA40F00 ), "ZEN3" },
     { PackCpuInfo( 0xA50F00 ), "ZEN3" },
+    { PackCpuInfo( 0x090672 ), "ADL-P" },
     { PackCpuInfo( 0x0A0671 ), "RKL" },
     { PackCpuInfo( 0x0806C1 ), "TGL" },
     { PackCpuInfo( 0x0806D1 ), "TGL" },
@@ -505,7 +566,7 @@ void SourceView::OpenSource( const char* fileName, int line, const View& view, c
     assert( !m_source.empty() );
 }
 
-void SourceView::OpenSymbol( const char* fileName, int line, uint64_t baseAddr, uint64_t symAddr, const Worker& worker, const View& view )
+void SourceView::OpenSymbol( const char* fileName, int line, uint64_t baseAddr, uint64_t symAddr, Worker& worker, const View& view )
 {
     m_targetLine = line;
     m_targetAddr = symAddr;
@@ -955,14 +1016,14 @@ void SourceView::RenderSimpleSourceView()
 {
     ImGui::SetNextWindowContentSize( ImVec2( m_srcWidth, 0 ) );
     ImGui::BeginChild( "##sourceView", ImVec2( 0, 0 ), true, ImGuiWindowFlags_HorizontalScrollbar );
-    if( m_font ) ImGui::PushFont( m_font );
+    SetFont();
 
     auto& lines = m_source.get();
     auto draw = ImGui::GetWindowDrawList();
     const auto wpos = ImGui::GetWindowPos();
     const auto dpos = wpos + ImVec2( 0.5f, 0.5f );
     const auto wh = ImGui::GetWindowHeight();
-    const auto ty = ImGui::GetFontSize();
+    const auto ty = ImGui::GetTextLineHeight();
     const auto ts = ImGui::CalcTextSize( " " ).x;
     const auto lineCount = lines.size();
     const auto tmp = RealToString( lineCount );
@@ -970,7 +1031,7 @@ void SourceView::RenderSimpleSourceView()
     const auto lx = ts * maxLine + ty + round( ts*0.4f );
     DrawLine( draw, dpos + ImVec2( lx, 0 ), dpos + ImVec2( lx, wh ), 0x08FFFFFF );
 
-    const AddrStat zero = {};
+    const AddrStatData zero;
     if( m_targetLine != 0 )
     {
         int lineNum = 1;
@@ -981,7 +1042,7 @@ void SourceView::RenderSimpleSourceView()
                 m_targetLine = 0;
                 ImGui::SetScrollHereY();
             }
-            RenderLine( line, lineNum++, zero, zero, zero, nullptr, nullptr );
+            RenderLine( line, lineNum++, zero.ipMaxAsm, zero, nullptr, nullptr );
         }
         const auto win = ImGui::GetCurrentWindowRead();
         m_srcWidth = win->DC.CursorMaxPos.x - win->DC.CursorStartPos.x;
@@ -994,11 +1055,11 @@ void SourceView::RenderSimpleSourceView()
         {
             for( auto i=clipper.DisplayStart; i<clipper.DisplayEnd; i++ )
             {
-                RenderLine( lines[i], i+1, zero, zero, zero, nullptr, nullptr );
+                RenderLine( lines[i], i+1, zero.ipMaxAsm, zero, nullptr, nullptr );
             }
         }
     }
-    if( m_font ) ImGui::PopFont();
+    UnsetFont();
     ImGui::EndChild();
 }
 
@@ -1035,7 +1096,17 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
     auto inlineList = worker.GetInlineSymbolList( m_baseAddr, m_codeLen );
     if( inlineList )
     {
-        SmallCheckbox( ICON_FA_SITEMAP " Function:", &m_calcInlineStats );
+        if( m_calcInlineStats )
+        {
+            ImGui::SameLine();
+            TextColoredUnformatted( ImVec4( 1.f, 1.f, 0.2f, 1.f ), ICON_FA_EXCLAMATION_TRIANGLE );
+            TooltipIfHovered( "Context is limited to an inline function" );
+        }
+        if( SmallCheckbox( ICON_FA_SITEMAP " Function:", &m_calcInlineStats ) )
+        {
+            m_asmTarget.line = 0;
+            SelectLine( m_selectedLine, &worker, true, 0, false );
+        }
         ImGui::SameLine();
         ImGui::SetNextItemWidth( -1 );
         ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( 0, 0 ) );
@@ -1139,30 +1210,33 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
                 }
                 auto isym = worker.GetSymbolData( v.first );
                 assert( isym );
+                const char* file;
+                uint32_t line;
+                if( isym->isInline )
+                {
+                    file = worker.GetString( isym->callFile );
+                    line = isym->callLine;
+                }
+                else
+                {
+                    file = worker.GetString( isym->file );
+                    line = isym->line;
+                }
                 ImGui::PushID( v.first );
                 const auto symName = v.first == m_baseAddr ? "[ - self - ]" : worker.GetString( isym->name );
                 if( ImGui::Selectable( symName, v.first == m_symAddr, ImGuiSelectableFlags_SpanAllColumns ) )
                 {
                     m_symAddr = v.first;
-                    const auto sym = worker.GetSymbolData( v.first );
-                    const char* file;
-                    uint32_t line;
-                    if( sym->isInline )
-                    {
-                        file = worker.GetString( sym->callFile );
-                        line = sym->callLine;
-                    }
-                    else
-                    {
-                        file = worker.GetString( sym->file );
-                        line = sym->line;
-                    }
                     ParseSource( file, worker, view );
                     m_targetLine = line;
                     SelectLine( line, &worker, true );
                     SelectViewMode();
                 }
                 ImGui::PopID();
+                ImGui::SameLine();
+                ImGui::Spacing();
+                ImGui::SameLine();
+                ImGui::TextDisabled( "%s:%i", file, line );
                 ImGui::NextColumn();
                 ImGui::TextDisabled( "0x%" PRIx64, v.first );
                 ImGui::NextColumn();
@@ -1200,42 +1274,44 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
         TextFocused( ICON_FA_WEIGHT_HANGING " Code:", MemSizeToString( m_codeLen ) );
     }
 
-    AddrStat iptotalSrc = {}, iptotalAsm = {};
-    AddrStat ipmaxSrc = {}, ipmaxAsm = {};
-    unordered_flat_map<uint64_t, AddrStat> ipcountSrc, ipcountAsm;
+    AddrStatData as;
     if( m_cost == CostType::SampleCount )
     {
         if( m_calcInlineStats )
         {
-            GatherIpStats( m_symAddr, iptotalSrc, iptotalAsm, ipcountSrc, ipcountAsm, ipmaxSrc, ipmaxAsm, worker, limitView, view );
-            GatherAdditionalIpStats( m_symAddr, iptotalSrc, iptotalAsm, ipcountSrc, ipcountAsm, ipmaxSrc, ipmaxAsm, worker, limitView, view );
+            GatherIpStats( m_symAddr, as, worker, limitView, view );
+            GatherAdditionalIpStats( m_symAddr, as, worker, limitView, view );
         }
         else
         {
-            GatherIpStats( m_baseAddr, iptotalSrc, iptotalAsm, ipcountSrc, ipcountAsm, ipmaxSrc, ipmaxAsm, worker, limitView, view );
+            GatherIpStats( m_baseAddr, as, worker, limitView, view );
             auto iptr = worker.GetInlineSymbolList( m_baseAddr, m_codeLen );
             if( iptr )
             {
                 const auto symEnd = m_baseAddr + m_codeLen;
                 while( *iptr < symEnd )
                 {
-                    GatherIpStats( *iptr, iptotalSrc, iptotalAsm, ipcountSrc, ipcountAsm, ipmaxSrc, ipmaxAsm, worker, limitView, view );
+                    GatherIpStats( *iptr, as, worker, limitView, view );
                     iptr++;
                 }
             }
-            GatherAdditionalIpStats( m_symAddr, iptotalSrc, iptotalAsm, ipcountSrc, ipcountAsm, ipmaxSrc, ipmaxAsm, worker, limitView, view );
+            GatherAdditionalIpStats( m_baseAddr, as, worker, limitView, view );
         }
     }
     else
     {
-        GatherIpHwStats( iptotalSrc, iptotalAsm, ipcountSrc, ipcountAsm, ipmaxSrc, ipmaxAsm, worker, limitView, view );
+        GatherIpHwStats( as, worker, view, m_cost );
     }
     if( !m_calcInlineStats )
     {
-        iptotalSrc = iptotalAsm;
+        as.ipTotalSrc = as.ipTotalAsm;
     }
-    const auto slzReady = worker.AreSourceLocationZonesReady();
-    if( ( iptotalAsm.local + iptotalAsm.ext ) > 0 || ( view.m_statRange.active && worker.GetSamplesForSymbol( m_baseAddr ) ) )
+    if( m_hwSamplesRelative )
+    {
+        CountHwStats( as, worker, view );
+    }
+    const auto samplesReady = worker.AreSymbolSamplesReady();
+    if( ( as.ipTotalAsm.local + as.ipTotalAsm.ext ) > 0 || ( view.m_statRange.active && worker.GetSamplesForSymbol( m_baseAddr ) ) )
     {
         ImGui::SameLine();
         ImGui::Spacing();
@@ -1243,6 +1319,8 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
         if( worker.GetHwSampleCountAddress() != 0 )
         {
             SmallCheckbox( ICON_FA_HAMMER " Hw samples", &m_hwSamples );
+            ImGui::SameLine();
+            SmallCheckbox( ICON_FA_CAR_CRASH " Impact", &m_hwSamplesRelative );
             ImGui::SameLine();
             ImGui::Spacing();
             ImGui::SameLine();
@@ -1254,14 +1332,22 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
                 const auto w = ImGui::CalcTextSize( v ).x;
                 if( w > mw ) mw = w;
             }
-            ImGui::SetNextItemWidth( mw + ImGui::GetFontSize() );
+            ImGui::SetNextItemWidth( mw + ImGui::GetTextLineHeight() );
             ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( 0, 0 ) );
             if( ImGui::BeginCombo( "##cost", s_CostName[(int)m_cost], ImGuiComboFlags_HeightLarge ) )
             {
                 int idx = 0;
                 for( auto& v : s_CostName )
                 {
-                    if( ImGui::Selectable( v, idx == (int)m_cost ) ) m_cost = (CostType)idx;
+                    if( ImGui::Selectable( v, idx == (int)m_cost ) )
+                    {
+                        m_cost = (CostType)idx;
+
+                        if( m_cost == CostType::SlowBranches && !worker.HasHwBranchRetirement() )
+                        {
+                            m_cost = CostType::BranchMiss;
+                        }
+                    }
                     if( (CostType)idx == s_costSeparateAfter ) ImGui::Separator();
                     idx++;
                 }
@@ -1274,85 +1360,69 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
         }
         if( m_cost == CostType::SampleCount )
         {
-            if( !slzReady )
+            if( !samplesReady )
             {
                 ImGui::PushItemFlag( ImGuiItemFlags_Disabled, true );
                 ImGui::PushStyleVar( ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f );
                 m_childCalls = false;
+                m_childCallList = false;
             }
             else if( ImGui::IsKeyDown( 'Z' ) )
             {
                 m_childCalls = !m_childCalls;
             }
             SmallCheckbox( ICON_FA_SIGN_OUT_ALT " Child calls", &m_childCalls );
-            if( !slzReady )
+            if( !samplesReady )
             {
                 ImGui::PopStyleVar();
                 ImGui::PopItemFlag();
-                if( ImGui::IsItemHovered() )
-                {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted( "Please wait, processing data..." );
-                    ImGui::EndTooltip();
-                }
+                TooltipIfHovered( "Please wait, processing data..." );
             }
             else
             {
-                if( ImGui::IsItemHovered() )
-                {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted( "Press Z key to temporarily reverse selection." );
-                    ImGui::EndTooltip();
-                }
+                TooltipIfHovered( "Press Z key to temporarily reverse selection." );
+            }
+            ImGui::SameLine();
+            if( ImGui::SmallButton( m_childCallList ? " " ICON_FA_CARET_UP " " : " " ICON_FA_CARET_DOWN " " ) ) m_childCallList = !m_childCallList;
+            ImGui::SameLine();
+            ImGui::Spacing();
+            ImGui::SameLine();
+            if( m_childCalls )
+            {
+                TextFocused( ICON_FA_STOPWATCH " Time:", TimeToString( ( as.ipTotalAsm.local + as.ipTotalAsm.ext ) * worker.GetSamplingPeriod() ) );
+            }
+            else
+            {
+                TextFocused( ICON_FA_STOPWATCH " Time:", TimeToString( as.ipTotalAsm.local * worker.GetSamplingPeriod() ) );
+            }
+            if( as.ipTotalAsm.ext )
+            {
+                ImGui::SameLine();
+                ImGui::TextDisabled( "(%c%s)", m_childCalls ? '-' : '+', TimeToString( as.ipTotalAsm.ext * worker.GetSamplingPeriod() ) );
+                TooltipIfHovered( "Child call samples" );
             }
             ImGui::SameLine();
             ImGui::Spacing();
             ImGui::SameLine();
             if( m_childCalls )
             {
-                TextFocused( ICON_FA_STOPWATCH " Time:", TimeToString( ( iptotalAsm.local + iptotalAsm.ext ) * worker.GetSamplingPeriod() ) );
+                TextFocused( ICON_FA_EYE_DROPPER " Samples:", RealToString( as.ipTotalAsm.local + as.ipTotalAsm.ext ) );
             }
             else
             {
-                TextFocused( ICON_FA_STOPWATCH " Time:", TimeToString( iptotalAsm.local * worker.GetSamplingPeriod() ) );
+                TextFocused( ICON_FA_EYE_DROPPER " Samples:", RealToString( as.ipTotalAsm.local ) );
             }
-            if( iptotalAsm.ext )
+            if( as.ipTotalAsm.ext )
             {
                 ImGui::SameLine();
-                ImGui::TextDisabled( "(%c%s)", m_childCalls ? '-' : '+', TimeToString( iptotalAsm.ext * worker.GetSamplingPeriod() ) );
-                if( ImGui::IsItemHovered() )
-                {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted( "Child call samples" );
-                    ImGui::EndTooltip();
-                }
-            }
-            ImGui::SameLine();
-            ImGui::Spacing();
-            ImGui::SameLine();
-            if( m_childCalls )
-            {
-                TextFocused( ICON_FA_EYE_DROPPER " Samples:", RealToString( iptotalAsm.local + iptotalAsm.ext ) );
-            }
-            else
-            {
-                TextFocused( ICON_FA_EYE_DROPPER " Samples:", RealToString( iptotalAsm.local ) );
-            }
-            if( iptotalAsm.ext )
-            {
-                ImGui::SameLine();
-                ImGui::Text( "(%c%s)", m_childCalls ? '-' : '+', RealToString( iptotalAsm.ext ) );
-                if( ImGui::IsItemHovered() )
-                {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted( "Child call samples" );
-                    ImGui::EndTooltip();
-                }
+                ImGui::Text( "(%c%s)", m_childCalls ? '-' : '+', RealToString( as.ipTotalAsm.ext ) );
+                TooltipIfHovered( "Child call samples" );
             }
         }
         else
         {
-            TextFocused( "Events:", RealToString( iptotalAsm.local ) );
+            TextFocused( "Events:", RealToString( as.ipTotalAsm.local ) );
+            m_childCallList = false;
         }
         ImGui::SameLine();
         ImGui::Spacing();
@@ -1366,12 +1436,7 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
             ImGui::Checkbox( "Limit range", &val );
             ImGui::PopItemFlag();
             ImGui::PopStyleVar();
-            if( ImGui::IsItemHovered() )
-            {
-                ImGui::BeginTooltip();
-                ImGui::TextUnformatted( "Please wait, processing data..." );
-                ImGui::EndTooltip();
-            }
+            TooltipIfHovered( "Please wait, processing data..." );
         }
         else
         {
@@ -1401,20 +1466,97 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
     ImGui::PopStyleVar();
     ImGui::Separator();
 
+    if( m_childCallList )
+    {
+        unordered_flat_map<uint64_t, uint32_t> map;
+        if( m_calcInlineStats )
+        {
+            GatherChildStats( m_symAddr, map, worker, limitView, view );
+        }
+        else
+        {
+            GatherChildStats( m_baseAddr, map, worker, limitView, view );
+        }
+        if( !map.empty() )
+        {
+            TextDisabledUnformatted( "Child call distribution" );
+            if( ImGui::BeginChild( "ccd", ImVec2( 0, ImGui::GetTextLineHeight() * std::min<size_t>( 4, map.size() ) + ImGui::GetStyle().WindowPadding.y ) ) )
+            {
+                std::vector<ChildStat> vec;
+                vec.reserve( map.size() );
+                for( auto& v : map ) vec.emplace_back( ChildStat { v.first, v.second } );
+                pdqsort_branchless( vec.begin(), vec.end(), []( const auto& lhs, const auto& rhs ) { return lhs.count > rhs.count; } );
+                int idx = 1;
+                for( auto& v : vec )
+                {
+                    ImGui::TextDisabled( "%i.", idx++ );
+                    ImGui::SameLine();
+                    auto sd = worker.GetSymbolData( v.addr );
+                    const auto symName = sd ? worker.GetString( sd->name ) : "[unknown]";
+                    if( v.addr >> 63 == 0 )
+                    {
+                        ImGui::TextUnformatted( symName );
+                    }
+                    else
+                    {
+                        TextColoredUnformatted( 0xFF8888FF, symName );
+                    }
+                    ImGui::SameLine();
+                    char tmp[16];
+                    auto end = PrintFloat( tmp, tmp+16, 100.f * v.count / as.ipTotalAsm.ext, 2 );
+                    *end = '\0';
+                    ImGui::TextDisabled( "%s (%s%%)", TimeToString( v.count * worker.GetSamplingPeriod() ), tmp );
+                    if( ImGui::IsItemHovered() )
+                    {
+                        ImGui::BeginTooltip();
+                        ImGui::Text( "%s samples", RealToString( v.count ) );
+                        ImGui::EndTooltip();
+                    }
+                    if( sd && sd->line != 0 )
+                    {
+                        const auto fileName = worker.GetString( sd->file );
+                        ImGui::SameLine();
+                        ImGui::Spacing();
+                        ImGui::SameLine();
+                        ImGui::TextDisabled( "%s:%i", fileName, sd->line );
+                        if( ImGui::IsItemHovered() && SourceFileValid( fileName, worker.GetCaptureTime(), view, worker ) )
+                        {
+                            m_sourceTooltip.Parse( fileName, worker, view );
+                            if( !m_sourceTooltip.empty() )
+                            {
+                                ImGui::BeginTooltip();
+                                SetFont();
+                                PrintSourceFragment( m_sourceTooltip, sd->line, 4, 7 );
+                                UnsetFont();
+                                ImGui::EndTooltip();
+                            }
+                            if( ImGui::IsMouseClicked( 1 ) )
+                            {
+                                OpenSymbol( fileName, sd->line, v.addr, v.addr, worker, view );
+                            }
+                        }
+                    }
+                }
+            }
+            ImGui::EndChild();
+            ImGui::Separator();
+        }
+    }
+
     uint64_t jumpOut = 0;
     switch( m_displayMode )
     {
     case DisplaySource:
-        RenderSymbolSourceView( iptotalSrc, ipcountSrc, ipcountAsm, ipmaxSrc, worker, view );
+        RenderSymbolSourceView( as, worker, view );
         break;
     case DisplayAsm:
-        jumpOut = RenderSymbolAsmView( iptotalAsm, ipcountAsm, ipmaxAsm, worker, view );
+        jumpOut = RenderSymbolAsmView( as, worker, view );
         break;
     case DisplayMixed:
         ImGui::Columns( 2 );
-        RenderSymbolSourceView( iptotalSrc, ipcountSrc, ipcountAsm, ipmaxSrc, worker, view );
+        RenderSymbolSourceView( as, worker, view );
         ImGui::NextColumn();
-        jumpOut = RenderSymbolAsmView( iptotalAsm, ipcountAsm, ipmaxAsm, worker, view );
+        jumpOut = RenderSymbolAsmView( as, worker, view );
         ImGui::EndColumns();
         break;
     default:
@@ -1422,7 +1564,7 @@ void SourceView::RenderSymbolView( Worker& worker, View& view )
         break;
     }
 
-    if( slzReady && ImGui::IsKeyDown( 'Z' ) ) m_childCalls = !m_childCalls;
+    if( samplesReady && ImGui::IsKeyDown( 'Z' ) ) m_childCalls = !m_childCalls;
 
     if( jumpOut != 0 )
     {
@@ -1532,8 +1674,9 @@ static uint32_t GetGoodnessColor( float inRatio )
     return GoodnessColor[ratio];
 }
 
-void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordered_flat_map<uint64_t, AddrStat>& ipcount, const unordered_flat_map<uint64_t, AddrStat>& ipcountAsm, const AddrStat& ipmax, Worker& worker, const View& view )
+void SourceView::RenderSymbolSourceView( const AddrStatData& as, Worker& worker, const View& view )
 {
+    const auto scale = GetScale();
     if( m_sourceFiles.empty() )
     {
         if( m_source.is_cached() )
@@ -1556,12 +1699,7 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
         if( m_source.is_cached() )
         {
             TextColoredUnformatted( ImVec4( 0.4f, 0.8f, 0.4f, 1.f ), ICON_FA_DATABASE );
-            if( ImGui::IsItemHovered() )
-            {
-                ImGui::BeginTooltip();
-                ImGui::TextUnformatted( "Source file cached during profiling run" );
-                ImGui::EndTooltip();
-            }
+            TooltipIfHovered( "Source file cached during profiling run" );
         }
         else
         {
@@ -1623,8 +1761,8 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
                     if( srcline != 0 )
                     {
                         AddrStat cnt = {};
-                        auto ait = ipcountAsm.find( v.addr );
-                        if( ait != ipcountAsm.end() ) cnt = ait->second;
+                        auto ait = as.ipCountAsm.find( v.addr );
+                        if( ait != as.ipCountAsm.end() ) cnt = ait->second;
 
                         auto fit = fileCounts.find( srcidx.Idx() );
                         if( fit == fileCounts.end() )
@@ -1758,30 +1896,30 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
     const float bottom = m_srcSampleSelect.empty() ? 0 : ImGui::GetFrameHeight();
     ImGui::SetNextWindowContentSize( ImVec2( m_srcWidth, 0 ) );
     ImGui::BeginChild( "##sourceView", ImVec2( 0, -bottom ), true, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_HorizontalScrollbar );
-    if( m_font ) ImGui::PushFont( m_font );
+    SetFont();
 
     auto& lines = m_source.get();
     auto draw = ImGui::GetWindowDrawList();
     const auto wpos = ImGui::GetWindowPos() - ImVec2( ImGui::GetCurrentWindowRead()->Scroll.x, 0 );
     const auto dpos = wpos + ImVec2( 0.5f, 0.5f );
     const auto wh = ImGui::GetWindowHeight();
-    const auto ty = ImGui::GetFontSize();
+    const auto ty = ImGui::GetTextLineHeight();
     const auto ts = ImGui::CalcTextSize( " " ).x;
     const auto lineCount = lines.size();
     const auto tmp = RealToString( lineCount );
     const auto maxLine = strlen( tmp );
     auto lx = ts * maxLine + ty + round( ts*0.4f );
-    if( iptotal.local + iptotal.ext != 0 ) lx += ts * 7 + ty;
+    if( as.ipTotalSrc.local + as.ipTotalSrc.ext != 0 ) lx += ts * 7 + ty;
     if( !m_asm.empty() )
     {
         const auto tmp = RealToString( m_asm.size() );
         const auto maxAsm = strlen( tmp ) + 1;
         lx += ts * maxAsm + ty;
     }
-    if( m_hwSamples && worker.GetHwSampleCountAddress() != 0 ) lx += 19 * ts + ty;
+    if( m_hwSamples && worker.GetHwSampleCountAddress() != 0 ) lx += 17 * ts + ty;
     DrawLine( draw, dpos + ImVec2( lx, 0 ), dpos + ImVec2( lx, wh ), 0x08FFFFFF );
 
-    const AddrStat zero = {};
+    const AddrStatData zero;
     m_selectedAddressesHover.clear();
     if( m_targetLine != 0 )
     {
@@ -1793,7 +1931,7 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
                 m_targetLine = 0;
                 ImGui::SetScrollHereY();
             }
-            RenderLine( line, lineNum++, zero, iptotal, ipmax, &worker, &view );
+            RenderLine( line, lineNum++, zero.ipMaxAsm, as, &worker, &view );
         }
         const auto win = ImGui::GetCurrentWindowRead();
         m_srcWidth = win->DC.CursorMaxPos.x - win->DC.CursorStartPos.x;
@@ -1804,20 +1942,20 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
         clipper.Begin( (int)lines.size() );
         while( clipper.Step() )
         {
-            if( iptotal.local + iptotal.ext == 0 )
+            if( as.ipTotalSrc.local + as.ipTotalSrc.ext == 0 )
             {
                 for( auto i=clipper.DisplayStart; i<clipper.DisplayEnd; i++ )
                 {
-                    RenderLine( lines[i], i+1, zero, zero, zero, &worker, &view );
+                    RenderLine( lines[i], i+1, zero.ipMaxAsm, zero, &worker, &view );
                 }
             }
             else
             {
                 for( auto i=clipper.DisplayStart; i<clipper.DisplayEnd; i++ )
                 {
-                    auto it = ipcount.find( i+1 );
-                    const auto ipcnt = it == ipcount.end() ? zero : it->second;
-                    RenderLine( lines[i], i+1, ipcnt, iptotal, ipmax, &worker, &view );
+                    auto it = as.ipCountSrc.find( i+1 );
+                    const auto ipcnt = it == as.ipCountSrc.end() ? zero.ipMaxAsm : it->second;
+                    RenderLine( lines[i], i+1, ipcnt, as, &worker, &view );
                 }
             }
         }
@@ -1841,11 +1979,11 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
         }
 
         std::vector<std::pair<uint64_t, AddrStat>> ipData;
-        ipData.reserve( ipcount.size() );
-        for( auto& v : ipcount ) ipData.emplace_back( v.first, v.second );
+        ipData.reserve( as.ipCountSrc.size() );
+        for( auto& v : as.ipCountSrc ) ipData.emplace_back( v.first, v.second );
         for( uint32_t lineNum = 1; lineNum <= lines.size(); lineNum++ )
         {
-            if( ipcount.find( lineNum ) == ipcount.end() )
+            if( as.ipCountSrc.find( lineNum ) == as.ipCountSrc.end() )
             {
                 auto addresses = worker.GetAddressesForLocation( m_source.idx(), lineNum );
                 if( addresses )
@@ -1880,20 +2018,20 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
             const auto ly = round( rect.Min.y + float( firstLine ) / lines.size() * rect.GetHeight() );
             if( m_childCalls )
             {
-                const auto color = ( ipSum.local + ipSum.ext == 0 ) ? 0x22FFFFFF : GetHotnessColor( ipSum.local + ipSum.ext, ipmax.local + ipmax.ext );
-                draw->AddRectFilled( ImVec2( x14, ly ), ImVec2( x34, ly+3 ), color );
+                const auto color = ( ipSum.local + ipSum.ext == 0 ) ? 0x22FFFFFF : GetHotnessColor( ipSum.local + ipSum.ext, as.ipMaxSrc.local + as.ipMaxSrc.ext );
+                draw->AddRectFilled( ImVec2( x14, ly ), ImVec2( x34, ly+3*scale ), color );
             }
             else
             {
-                const auto color = ipSum.local == 0 ? 0x22FFFFFF : GetHotnessColor( ipSum.local, ipmax.local );
-                draw->AddRectFilled( ImVec2( x14, ly ), ImVec2( x34, ly+3 ), color );
+                const auto color = ipSum.local == 0 ? 0x22FFFFFF : GetHotnessColor( ipSum.local, as.ipMaxSrc.local );
+                draw->AddRectFilled( ImVec2( x14, ly ), ImVec2( x34, ly+3*scale ), color );
             }
         }
 
         ImGui::PopClipRect();
     }
 
-    if( m_font ) ImGui::PopFont();
+    UnsetFont();
     ImGui::EndChild();
 
     if( !m_srcSampleSelect.empty() )
@@ -1902,8 +2040,8 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
         uint32_t numLines = 0;
         for( auto& idx : m_srcSampleSelect )
         {
-            auto it = ipcount.find( idx );
-            if( it != ipcount.end() )
+            auto it = as.ipCountSrc.find( idx );
+            if( it != as.ipCountSrc.end() )
             {
                 count += it->second;
                 numLines++;
@@ -1921,11 +2059,11 @@ void SourceView::RenderSymbolSourceView( const AddrStat& iptotal, const unordere
         char* end;
         if( m_childCalls )
         {
-            end = PrintFloat( buf, buf+16, 100.f * ( count.local + count.ext ) / ( iptotal.local + iptotal.ext ), 2 );
+            end = PrintFloat( buf, buf+16, 100.f * ( count.local + count.ext ) / ( as.ipTotalSrc.local + as.ipTotalSrc.ext ), 2 );
         }
-        else if( iptotal.local != 0 )
+        else if( as.ipTotalSrc.local != 0 )
         {
-            end = PrintFloat( buf, buf+16, 100.f * count.local / iptotal.local, 2 );
+            end = PrintFloat( buf, buf+16, 100.f * count.local / as.ipTotalSrc.local, 2 );
         }
         else
         {
@@ -2017,8 +2155,9 @@ static int PrintHexBytes( char* buf, const uint8_t* bytes, size_t len, CpuArchit
     }
 }
 
-uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unordered_flat_map<uint64_t, AddrStat>& ipcount, const AddrStat& ipmax, Worker& worker, View& view )
+uint64_t SourceView::RenderSymbolAsmView( const AddrStatData& as, Worker& worker, View& view )
 {
+    const auto scale = GetScale();
     if( m_disasmFail >= 0 )
     {
         TextColoredUnformatted( ImVec4( 1.f, 1.f, 0.2f, 1.f ), ICON_FA_EXCLAMATION_TRIANGLE );
@@ -2082,12 +2221,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
             if( m_selMicroArch == m_profileMicroArch )
             {
                 TextColoredUnformatted( ImVec4( 0.4f, 0.8f, 0.4f, 1.f ), ICON_FA_MICROCHIP );
-                if( ImGui::IsItemHovered() )
-                {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted( "Selected microarchitecture is the same as the profiled application was running on" );
-                    ImGui::EndTooltip();
-                }
+                TooltipIfHovered( "Selected microarchitecture is the same as the profiled application was running on" );
             }
             else
             {
@@ -2110,7 +2244,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
             ImGui::SameLine( 0, 0 );
             ImGui::TextUnformatted( " \xce\xbc""arch:" );
             ImGui::SameLine();
-            ImGui::SetNextItemWidth( mw + ImGui::GetFontSize() );
+            ImGui::SetNextItemWidth( mw + ImGui::GetTextLineHeight() );
             ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( 0, 0 ) );
             if( ImGui::BeginCombo( "##uarch", s_uArchUx[m_selMicroArch].uArch, ImGuiComboFlags_HeightLarge ) )
             {
@@ -2146,7 +2280,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
     const float bottom = m_asmSampleSelect.empty() ? 0 : ImGui::GetFrameHeight();
     ImGui::SetNextWindowContentSize( ImVec2( m_asmWidth, 0 ) );
     ImGui::BeginChild( "##asmView", ImVec2( 0, -bottom ), true, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_HorizontalScrollbar );
-    if( m_font ) ImGui::PushFont( m_font );
+    SetFont();
 
     int maxAddrLen;
     {
@@ -2160,7 +2294,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
     uint64_t selJumpTarget;
     uint64_t jumpOut = 0;
 
-    const AddrStat zero = {};
+    const AddrStatData zero;
     if( m_targetAddr != 0 )
     {
         for( auto& line : m_asm )
@@ -2170,7 +2304,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
                 m_targetAddr = 0;
                 ImGui::SetScrollHereY();
             }
-            RenderAsmLine( line, zero, iptotal, ipmax, worker, jumpOut, maxAddrLen, view );
+            RenderAsmLine( line, zero.ipMaxAsm, as, worker, jumpOut, maxAddrLen, view );
         }
         const auto win = ImGui::GetCurrentWindowRead();
         m_asmWidth = win->DC.CursorMaxPos.x - win->DC.CursorStartPos.x;
@@ -2182,16 +2316,15 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
         clipper.Begin( (int)m_asm.size(), th );
         while( clipper.Step() )
         {
-            assert( clipper.StepNo == 3 );
             const auto wpos = ImGui::GetCursorScreenPos();
             const auto dpos = wpos + ImVec2( 0.5f, 0.5f );
             static std::vector<uint64_t> insList;
             insList.clear();
-            if( iptotal.local + iptotal.ext == 0 )
+            if( as.ipTotalAsm.local + as.ipTotalAsm.ext == 0 )
             {
                 for( auto i=clipper.DisplayStart; i<clipper.DisplayEnd; i++ )
                 {
-                    RenderAsmLine( m_asm[i], zero, zero, zero, worker, jumpOut, maxAddrLen, view );
+                    RenderAsmLine( m_asm[i], zero.ipMaxAsm, zero, worker, jumpOut, maxAddrLen, view );
                     insList.emplace_back( m_asm[i].addr );
                 }
             }
@@ -2200,28 +2333,24 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
                 for( auto i=clipper.DisplayStart; i<clipper.DisplayEnd; i++ )
                 {
                     auto& line = m_asm[i];
-                    auto it = ipcount.find( line.addr );
-                    const auto ipcnt = it == ipcount.end() ? zero : it->second;
-                    RenderAsmLine( line, ipcnt, iptotal, ipmax, worker, jumpOut, maxAddrLen, view );
+                    auto it = as.ipCountAsm.find( line.addr );
+                    const auto ipcnt = it == as.ipCountAsm.end() ? zero.ipMaxAsm : it->second;
+                    RenderAsmLine( line, ipcnt, as, worker, jumpOut, maxAddrLen, view );
                     insList.emplace_back( line.addr );
                 }
             }
-            if( m_showJumps && !m_jumpTable.empty() )
+            if( m_showJumps && !m_jumpTable.empty() && clipper.DisplayStart != clipper.DisplayEnd )
             {
                 auto draw = ImGui::GetWindowDrawList();
                 const auto ts = ImGui::CalcTextSize( " " );
                 const auto th2 = floor( ts.y / 2 );
                 const auto th4 = floor( ts.y / 4 );
-                const auto xoff =
-                    ( ( iptotal.local + iptotal.ext ) == 0 ? 0 : ( 7 * ts.x + ts.y ) ) +
-                    (3+maxAddrLen) * ts.x +
-                    ( ( m_asmShowSourceLocation && !m_sourceFiles.empty() ) ? 36 * ts.x : 0 ) +
-                    ( m_asmBytes ? m_maxAsmBytes*3 * ts.x : 0 ) +
-                    ( ( m_hwSamples && worker.GetHwSampleCountAddress() != 0 ) ? ( 19 * ts.x + ts.y ) : 0 );
+                const auto xoff = m_jumpOffset;
                 const auto minAddr = m_asm[clipper.DisplayStart].addr;
                 const auto maxAddr = m_asm[clipper.DisplayEnd-1].addr;
                 const auto mjl = m_maxJumpLevel;
                 const auto JumpArrow = JumpArrowBase * ts.y / 15;
+                const auto JumpSeparation = round( JumpSeparationBase * ts.y / 15 );
 
                 int i = -1;
                 for( auto& v : m_jumpTable )
@@ -2239,7 +2368,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
                     if( ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect( wpos + ImVec2( xoff + JumpSeparation * ( mjl - v.second.level ) - JumpSeparation / 2, y0 + th2 ), wpos + ImVec2( xoff + JumpSeparation * ( mjl - v.second.level ) + JumpSeparation / 2, y1 + th2 ) ) )
                     {
                         thickness = 2;
-                        if( m_font ) ImGui::PopFont();
+                        UnsetFont();
                         ImGui::BeginTooltip();
                         char tmp[32];
                         sprintf( tmp, "+%" PRIu64, v.first - m_baseAddr );
@@ -2258,28 +2387,74 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
                             const auto fileName = worker.GetString( srcidx );
                             const auto fileColor = GetHsvColor( srcidx.Idx(), 0 );
                             TextDisabledUnformatted( "Target location:" );
-                            ImGui::SameLine();
                             SmallColorBox( fileColor );
                             ImGui::SameLine();
                             ImGui::Text( "%s:%i", fileName, srcline );
+                            const auto symAddr = worker.GetInlineSymbolForAddress( v.first );
+                            if( symAddr != 0 )
+                            {
+                                const auto symData = worker.GetSymbolData( symAddr );
+                                if( symData )
+                                {
+                                    ImGui::SameLine();
+                                    if( m_smallFont ) { ImGui::PushFont( m_smallFont ); ImGui::AlignTextToFramePadding(); }
+                                    TextDisabledUnformatted( worker.GetString( symData->name ) );
+                                    if( m_smallFont ) ImGui::PopFont();
+                                }
+                            }
                         }
                         TextFocused( "Jump range:", MemSizeToString( v.second.max - v.second.min ) );
+                        ImGui::Separator();
                         TextFocused( "Jump sources:", RealToString( v.second.source.size() ) );
+                        const auto ssz = std::min<size_t>( v.second.source.size(), 10 );
+                        for( int j=0; j<ssz; j++ )
+                        {
+                            const auto sidx = worker.GetLocationForAddress( v.second.source[j], srcline );
+                            if( srcline == 0 )
+                            {
+                                SmallColorBox( 0 );
+                                ImGui::SameLine();
+                                ImGui::TextDisabled( "%i. 0x%" PRIx64, j+1, v.second.source[j] );
+                            }
+                            else
+                            {
+                                const auto fn = worker.GetString( sidx );
+                                const auto fc = GetHsvColor( sidx.Idx(), 0 );
+                                SmallColorBox( fc );
+                                ImGui::SameLine();
+                                ImGui::Text( "%i. %s:%i", j+1, fn, srcline );
+
+                                const auto symAddr = worker.GetInlineSymbolForAddress( v.second.source[j] );
+                                if( symAddr != 0 )
+                                {
+                                    const auto symData = worker.GetSymbolData( symAddr );
+                                    if( symData )
+                                    {
+                                        ImGui::SameLine();
+                                        if( m_smallFont ) { ImGui::PushFont( m_smallFont ); ImGui::AlignTextToFramePadding(); }
+                                        TextDisabledUnformatted( worker.GetString( symData->name ) );
+                                        if( m_smallFont ) ImGui::PopFont();
+                                    }
+                                }
+                            }
+                        }
+                        if( ssz != v.second.source.size() )
+                        {
+                            ImGui::TextUnformatted( "..." );
+                        }
                         ImGui::EndTooltip();
-                        if( m_font ) ImGui::PushFont( m_font );
+                        SetFont();
                         if( ImGui::IsMouseClicked( 0 ) )
                         {
                             m_targetAddr = v.first;
                             m_selectedAddresses.clear();
                             m_selectedAddresses.emplace( v.first );
                         }
-#ifndef TRACY_NO_FILESELECTOR
                         else if( ImGui::IsMouseClicked( 1 ) )
                         {
                             ImGui::OpenPopup( "jumpPopup" );
                             m_jumpPopupAddr = v.first;
                         }
-#endif
                         selJumpStart = v.second.min;
                         selJumpEnd = v.second.max;
                         selJumpTarget = v.first;
@@ -2310,15 +2485,15 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
             }
         }
 
-#ifndef TRACY_NO_FILESELECTOR
-        if( m_font ) ImGui::PopFont();
+        UnsetFont();
         if( ImGui::BeginPopup( "jumpPopup" ) )
         {
-            if( ImGui::Button( ICON_FA_FILE_IMPORT " Save jump range" ) )
-            {
-                auto it = m_jumpTable.find( m_jumpPopupAddr );
-                assert( it != m_jumpTable.end() );
+            auto it = m_jumpTable.find( m_jumpPopupAddr );
+            assert( it != m_jumpTable.end() );
 
+#ifndef TRACY_NO_FILESELECTOR
+            if( ImGui::MenuItem( ICON_FA_FILE_IMPORT " Save jump range" ) )
+            {
                 size_t minIdx = 0, maxIdx = 0;
                 size_t i;
                 for( i=0; i<m_asm.size(); i++ )
@@ -2343,10 +2518,100 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
                 Save( worker, minIdx, maxIdx );
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::Separator();
+#endif
+            if( ImGui::BeginMenu( "Sources" ) )
+            {
+                for( auto& src : it->second.source )
+                {
+                    uint32_t srcline;
+                    const auto srcidx = worker.GetLocationForAddress( src, srcline );
+                    if( srcline == 0 )
+                    {
+                        SmallColorBox( 0 );
+                        ImGui::SameLine();
+                        ImGui::TextDisabled( "0x%" PRIx64, src );
+                    }
+                    else
+                    {
+                        const auto fileName = worker.GetString( srcidx );
+                        const auto fileColor = GetHsvColor( srcidx.Idx(), 0 );
+                        SmallColorBox( fileColor );
+                        ImGui::SameLine();
+                        char buf[1024];
+                        snprintf( buf, 1024, "%s:%i", fileName, srcline );
+                        ImGui::PushID( src );
+                        if( ImGui::BeginMenu( buf ) )
+                        {
+                            if( SourceFileValid( fileName, worker.GetCaptureTime(), view, worker ) )
+                            {
+                                m_sourceTooltip.Parse( fileName, worker, view );
+                                if( !m_sourceTooltip.empty() )
+                                {
+                                    SetFont();
+                                    PrintSourceFragment( m_sourceTooltip, srcline );
+                                    UnsetFont();
+                                }
+                            }
+                            else
+                            {
+                                TextDisabledUnformatted( "Source not available" );
+                            }
+                            ImGui::EndMenu();
+                            if( ImGui::IsItemClicked() )
+                            {
+                                m_targetAddr = src;
+                                m_selectedAddresses.clear();
+                                m_selectedAddresses.emplace( src );
+                            }
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            if( ImGui::BeginMenu( "Target" ) )
+            {
+                uint32_t srcline;
+                const auto srcidx = worker.GetLocationForAddress( m_jumpPopupAddr, srcline );
+                if( srcline != 0 )
+                {
+                    const auto fileName = worker.GetString( srcidx );
+                    const auto fileColor = GetHsvColor( srcidx.Idx(), 0 );
+                    SmallColorBox( fileColor );
+                    ImGui::SameLine();
+                    char buf[1024];
+                    snprintf( buf, 1024, "%s:%i", fileName, srcline );
+                    if( ImGui::BeginMenu( buf ) )
+                    {
+                        if( SourceFileValid( fileName, worker.GetCaptureTime(), view, worker ) )
+                        {
+                            m_sourceTooltip.Parse( fileName, worker, view );
+                            if( !m_sourceTooltip.empty() )
+                            {
+                                SetFont();
+                                PrintSourceFragment( m_sourceTooltip, srcline );
+                                UnsetFont();
+                            }
+                        }
+                        else
+                        {
+                            TextDisabledUnformatted( "Source not available" );
+                        }
+                        ImGui::EndMenu();
+                        if( ImGui::IsItemClicked() )
+                        {
+                            m_targetAddr = m_jumpPopupAddr;
+                            m_selectedAddresses.clear();
+                            m_selectedAddresses.emplace( m_jumpPopupAddr );
+                        }
+                    }
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndPopup();
         }
-        if( m_font ) ImGui::PushFont( m_font );
-#endif
+        SetFont();
     }
 
     const auto win = ImGui::GetCurrentWindowRead();
@@ -2401,13 +2666,13 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
 
         uint32_t selJumpLineStart, selJumpLineEnd, selJumpLineTarget;
         std::vector<std::pair<uint64_t, AddrStat>> ipData;
-        ipData.reserve( ipcount.size() );
+        ipData.reserve( as.ipCountAsm.size() );
         if( selJumpStart == 0 )
         {
             for( size_t i=0; i<m_asm.size(); i++ )
             {
-                auto it = ipcount.find( m_asm[i].addr );
-                if( it == ipcount.end() ) continue;
+                auto it = as.ipCountAsm.find( m_asm[i].addr );
+                if( it == as.ipCountAsm.end() ) continue;
                 ipData.emplace_back( i, it->second );
             }
         }
@@ -2419,8 +2684,8 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
                 if( selJumpEnd == m_asm[i].addr ) selJumpLineEnd = i;
                 if( selJumpTarget == m_asm[i].addr ) selJumpLineTarget = i;
 
-                auto it = ipcount.find( m_asm[i].addr );
-                if( it == ipcount.end() ) continue;
+                auto it = as.ipCountAsm.find( m_asm[i].addr );
+                if( it == as.ipCountAsm.end() ) continue;
                 ipData.emplace_back( i, it->second );
             }
         }
@@ -2443,13 +2708,13 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
             const auto ly = round( rect.Min.y + float( firstLine ) / m_asm.size() * rect.GetHeight() );
             if( m_childCalls )
             {
-                const auto color = GetHotnessColor( ipSum.local + ipSum.ext, ipmax.local + ipmax.ext );
-                draw->AddRectFilled( ImVec2( x40, ly ), ImVec2( x60, ly+3 ), color );
+                const auto color = GetHotnessColor( ipSum.local + ipSum.ext, as.ipMaxAsm.local + as.ipMaxAsm.ext );
+                draw->AddRectFilled( ImVec2( x40, ly ), ImVec2( x60, ly+3*scale ), color );
             }
-            else if( ipmax.local != 0 )
+            else if( as.ipMaxAsm.local != 0 )
             {
-                const auto color = GetHotnessColor( ipSum.local, ipmax.local );
-                draw->AddRectFilled( ImVec2( x40, ly ), ImVec2( x60, ly+3 ), color );
+                const auto color = GetHotnessColor( ipSum.local, as.ipMaxAsm.local );
+                draw->AddRectFilled( ImVec2( x40, ly ), ImVec2( x60, ly+3*scale ), color );
             }
         }
 
@@ -2501,7 +2766,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
         }
     }
 
-    if( m_font ) ImGui::PopFont();
+    UnsetFont();
     ImGui::EndChild();
 
     if( !m_asmSampleSelect.empty() )
@@ -2510,8 +2775,8 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
         uint32_t numLines = 0;
         for( auto& idx : m_asmSampleSelect )
         {
-            auto it = ipcount.find( m_asm[idx].addr );
-            if( it != ipcount.end() )
+            auto it = as.ipCountAsm.find( m_asm[idx].addr );
+            if( it != as.ipCountAsm.end() )
             {
                 count += it->second;
                 numLines++;
@@ -2529,11 +2794,11 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
         char* end;
         if( m_childCalls )
         {
-            end = PrintFloat( buf, buf+16, 100.f * ( count.local + count.ext ) / ( iptotal.local + iptotal.ext ), 2 );
+            end = PrintFloat( buf, buf+16, 100.f * ( count.local + count.ext ) / ( as.ipTotalAsm.local + as.ipTotalAsm.ext ), 2 );
         }
-        else if( iptotal.local != 0 )
+        else if( as.ipTotalAsm.local != 0 )
         {
-            end = PrintFloat( buf, buf+16, 100.f * count.local / iptotal.local, 2 );
+            end = PrintFloat( buf, buf+16, 100.f * count.local / as.ipTotalAsm.local, 2 );
         }
         else
         {
@@ -2582,7 +2847,7 @@ uint64_t SourceView::RenderSymbolAsmView( const AddrStat& iptotal, const unorder
 
 static bool PrintPercentage( float val, uint32_t col = 0xFFFFFFFF )
 {
-    const auto ty = ImGui::GetFontSize();
+    const auto ty = ImGui::GetTextLineHeight();
     auto draw = ImGui::GetWindowDrawList();
     const auto wpos = ImGui::GetCursorScreenPos();
     const auto stw = ImGui::CalcTextSize( " " ).x;
@@ -2605,10 +2870,11 @@ static bool PrintPercentage( float val, uint32_t col = 0xFFFFFFFF )
     return ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect( wpos, wpos + ImVec2( stw * 7, ty ) );
 }
 
-void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const AddrStat& ipcnt, const AddrStat& iptotal, const AddrStat& ipmax, Worker* worker, const View* view )
+void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const AddrStat& ipcnt, const AddrStatData& as, Worker* worker, const View* view )
 {
+    const auto scale = GetScale();
     const auto ts = ImGui::CalcTextSize( " " );
-    const auto ty = ImGui::GetFontSize();
+    const auto ty = ImGui::GetTextLineHeight();
     auto draw = ImGui::GetWindowDrawList();
     const auto w = std::max( m_srcWidth, ImGui::GetWindowWidth() );
     const auto wpos = ImGui::GetCursorScreenPos();
@@ -2670,7 +2936,7 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
     }
 
     bool mouseHandled = false;
-    if( iptotal.local + iptotal.ext != 0 )
+    if( as.ipTotalSrc.local + as.ipTotalSrc.ext != 0 )
     {
         if( ( m_childCalls && ipcnt.local + ipcnt.ext  == 0 ) || ( !m_childCalls && ipcnt.local == 0 ) )
         {
@@ -2678,11 +2944,11 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
             ImGui::ItemSize( ImVec2( 7 * ts.x, ts.y ) );
             if( hasHwData && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect( wpos, wpos + ImVec2( ts.x * 7, ty ) ) )
             {
-                if( m_font ) ImGui::PopFont();
+                UnsetFont();
                 ImGui::BeginTooltip();
                 PrintHwSampleTooltip( cycles, retired, cacheRef, cacheMiss, branchRetired, branchMiss, true );
                 ImGui::EndTooltip();
-                if( m_font ) ImGui::PushFont( m_font );
+                SetFont();
             }
         }
         else
@@ -2691,15 +2957,15 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
             bool hover;
             if( m_childCalls )
             {
-                hover = PrintPercentage( 100.f * ( ipcnt.local + ipcnt.ext ) / ( iptotal.local + iptotal.ext ), sit == m_srcSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
+                hover = PrintPercentage( 100.f * ( ipcnt.local + ipcnt.ext ) / ( as.ipTotalSrc.local + as.ipTotalSrc.ext ), sit == m_srcSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
             }
             else
             {
-                hover = PrintPercentage( 100.f * ipcnt.local / iptotal.local, sit == m_srcSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
+                hover = PrintPercentage( 100.f * ipcnt.local / as.ipTotalSrc.local, sit == m_srcSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
             }
             if( hover )
             {
-                if( m_font ) ImGui::PopFont();
+                UnsetFont();
                 ImGui::BeginTooltip();
                 if( ipcnt.local )
                 {
@@ -2720,7 +2986,7 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
                 }
                 if( hasHwData ) PrintHwSampleTooltip( cycles, retired, cacheRef, cacheMiss, branchRetired, branchMiss, false );
                 ImGui::EndTooltip();
-                if( m_font ) ImGui::PushFont( m_font );
+                SetFont();
 
                 if( ImGui::IsMouseClicked( 0 ) )
                 {
@@ -2782,20 +3048,20 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
             uint32_t col, glow;
             if( m_childCalls )
             {
-                col = GetHotnessColor( ipcnt.local + ipcnt.ext, ipmax.local + ipmax.ext );
-                glow = GetHotnessGlow( ipcnt.local + ipcnt.ext, ipmax.local + ipmax.ext );
+                col = GetHotnessColor( ipcnt.local + ipcnt.ext, as.ipMaxSrc.local + as.ipMaxSrc.ext );
+                glow = GetHotnessGlow( ipcnt.local + ipcnt.ext, as.ipMaxSrc.local + as.ipMaxSrc.ext );
             }
             else
             {
-                col = GetHotnessColor( ipcnt.local, ipmax.local );
-                glow = GetHotnessGlow( ipcnt.local, ipmax.local );
+                col = GetHotnessColor( ipcnt.local, as.ipMaxSrc.local );
+                glow = GetHotnessGlow( ipcnt.local, as.ipMaxSrc.local );
             }
             if( glow )
             {
-                DrawLine( draw, dpos + ImVec2( 1, 1 ), dpos + ImVec2( 1, ty-2 ), glow );
-                DrawLine( draw, dpos + ImVec2( -1, 1 ), dpos + ImVec2( -1, ty-2 ), glow );
+                DrawLine( draw, dpos + ImVec2( scale, 1 ), dpos + ImVec2( scale, ty-2 ), glow, scale );
+                DrawLine( draw, dpos + ImVec2( -scale, 1 ), dpos + ImVec2( -scale, ty-2 ), glow, scale );
             }
-            DrawLine( draw, dpos + ImVec2( 0, 1 ), dpos + ImVec2( 0, ty-2 ), col );
+            DrawLine( draw, dpos + ImVec2( 0, 1 ), dpos + ImVec2( 0, ty-2 ), col, scale );
         }
         ImGui::SameLine( 0, ty );
     }
@@ -2803,14 +3069,31 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
     const bool showHwSamples = worker && m_hwSamples && worker->GetHwSampleCountAddress() != 0;
     if( showHwSamples )
     {
+        const auto startPos = ImGui::GetCursorScreenPos();
         if( hasHwData )
         {
-            RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, ts );
+            if( m_hwSamplesRelative )
+            {
+                auto it = as.hwCountSrc.find( lineNum );
+                if( it == as.hwCountSrc.end() )
+                {
+                    RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, 0, 0, 0, 0, ts );
+                }
+                else
+                {
+                    RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, it->second.local, as.hwMaxSrc.local, it->second.ext, as.hwMaxSrc.ext, ts );
+                }
+            }
+            else
+            {
+                RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, 0, 0, 0, 0, ts );
+            }
         }
-        else
-        {
-            ImGui::ItemSize( ImVec2( 19 * ts.x, ts.y ) );
-        }
+        ImGui::SameLine( 0, 0 );
+        const auto endPos = ImGui::GetCursorScreenPos();
+        const auto itemsWidth = ( endPos - startPos ).x;
+        const auto fixedWidth = 17 * ts.x;
+        ImGui::ItemSize( ImVec2( fixedWidth - itemsWidth, 0 ) );
         ImGui::SameLine( 0, ty );
     }
 
@@ -2884,9 +3167,10 @@ void SourceView::RenderLine( const Tokenizer::Line& line, int lineNum, const Add
     DrawLine( draw, dpos + ImVec2( 0, ty+2 ), dpos + ImVec2( w, ty+2 ), 0x08FFFFFF );
 }
 
-void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const AddrStat& iptotal, const AddrStat& ipmax, Worker& worker, uint64_t& jumpOut, int maxAddrLen, View& view )
+void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const AddrStatData& as, Worker& worker, uint64_t& jumpOut, int maxAddrLen, View& view )
 {
-    const auto ty = ImGui::GetFontSize();
+    const auto scale = GetScale();
+    const auto ty = ImGui::GetTextLineHeight();
     auto draw = ImGui::GetWindowDrawList();
     const auto w = std::max( m_asmWidth, ImGui::GetWindowWidth() );
     const auto wpos = ImGui::GetCursorScreenPos();
@@ -2932,18 +3216,18 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     }
 
     const auto ts = ImGui::CalcTextSize( " " );
-    if( iptotal.local + iptotal.ext != 0 )
+    if( as.ipTotalAsm.local + as.ipTotalAsm.ext != 0 )
     {
         if( ( m_childCalls && ipcnt.local + ipcnt.ext == 0 ) || ( !m_childCalls && ipcnt.local == 0 ) )
         {
             ImGui::ItemSize( ImVec2( 7 * ts.x, ts.y ) );
             if( hw && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect( wpos, wpos + ImVec2( ts.x * 7, ty ) ) )
             {
-                if( m_font ) ImGui::PopFont();
+                UnsetFont();
                 ImGui::BeginTooltip();
                 PrintHwSampleTooltip( cycles, retired, cacheRef, cacheMiss, branchRetired, branchMiss, true );
                 ImGui::EndTooltip();
-                if( m_font ) ImGui::PushFont( m_font );
+                SetFont();
             }
         }
         else
@@ -2953,11 +3237,11 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
             bool hover;
             if( m_childCalls )
             {
-                hover = PrintPercentage( 100.f * ( ipcnt.local + ipcnt.ext ) / ( iptotal.local + iptotal.ext ), sit == m_asmSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
+                hover = PrintPercentage( 100.f * ( ipcnt.local + ipcnt.ext ) / ( as.ipTotalAsm.local + as.ipTotalAsm.ext ), sit == m_asmSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
             }
             else
             {
-                hover = PrintPercentage( 100.f * ipcnt.local / iptotal.local, sit == m_asmSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
+                hover = PrintPercentage( 100.f * ipcnt.local / as.ipTotalAsm.local, sit == m_asmSampleSelect.end() ? 0xFFFFFFFF : 0xFF8888FF );
             }
             if( hover )
             {
@@ -2982,7 +3266,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                     }
                 }
 
-                if( m_font ) ImGui::PopFont();
+                UnsetFont();
                 ImGui::BeginTooltip();
                 if( ipcnt.local )
                 {
@@ -3013,7 +3297,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                     TextDisabledUnformatted( "(middle click to view)" );
                 }
                 ImGui::EndTooltip();
-                if( m_font ) ImGui::PushFont( m_font );
+                SetFont();
 
                 if( ImGui::IsMouseClicked( 0 ) )
                 {
@@ -3070,27 +3354,27 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                 }
                 else if( !stats.parents.empty() && ImGui::IsMouseClicked( 2 ) )
                 {
-                    view.ShowSampleParents( symAddrParents );
+                    view.ShowSampleParents( symAddrParents, false );
                 }
             }
 
             uint32_t col, glow;
             if( m_childCalls )
             {
-                col = GetHotnessColor( ipcnt.local + ipcnt.ext, ipmax.local + ipmax.ext );
-                glow = GetHotnessGlow( ipcnt.local + ipcnt.ext, ipmax.local + ipmax.ext );
+                col = GetHotnessColor( ipcnt.local + ipcnt.ext, as.ipMaxAsm.local + as.ipMaxAsm.ext );
+                glow = GetHotnessGlow( ipcnt.local + ipcnt.ext, as.ipMaxAsm.local + as.ipMaxAsm.ext );
             }
             else
             {
-                col = GetHotnessColor( ipcnt.local, ipmax.local );
-                glow = GetHotnessGlow( ipcnt.local, ipmax.local );
+                col = GetHotnessColor( ipcnt.local, as.ipMaxAsm.local );
+                glow = GetHotnessGlow( ipcnt.local, as.ipMaxAsm.local );
             }
             if( glow )
             {
-                DrawLine( draw, dpos + ImVec2( 1, 1 ), dpos + ImVec2( 1, ty-2 ), glow );
-                DrawLine( draw, dpos + ImVec2( -1, 1 ), dpos + ImVec2( -1, ty-2 ), glow );
+                DrawLine( draw, dpos + ImVec2( scale, 1 ), dpos + ImVec2( scale, ty-2 ), glow, scale );
+                DrawLine( draw, dpos + ImVec2( -scale, 1 ), dpos + ImVec2( -scale, ty-2 ), glow, scale );
             }
-            DrawLine( draw, dpos + ImVec2( 0, 1 ), dpos + ImVec2( 0, ty-2 ), col );
+            DrawLine( draw, dpos + ImVec2( 0, 1 ), dpos + ImVec2( 0, ty-2 ), col, scale );
         }
         ImGui::SameLine( 0, ty );
     }
@@ -3098,14 +3382,31 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     const bool showHwSamples = m_hwSamples && worker.GetHwSampleCountAddress() != 0;
     if( showHwSamples )
     {
+        const auto startPos = ImGui::GetCursorScreenPos();
         if( hw )
         {
-            RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, ts );
+            if( m_hwSamplesRelative )
+            {
+                auto it = as.hwCountAsm.find( line.addr );
+                if( it == as.hwCountAsm.end() )
+                {
+                    RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, 0, 0, 0, 0, ts );
+                }
+                else
+                {
+                    RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, it->second.local, as.hwMaxAsm.local, it->second.ext, as.hwMaxAsm.ext, ts );
+                }
+            }
+            else
+            {
+                RenderHwLinePart( cycles, retired, branchRetired, branchMiss, cacheRef, cacheMiss, 0, 0, 0, 0, ts );
+            }
         }
-        else
-        {
-            ImGui::ItemSize( ImVec2( 19 * ts.x, ts.y ) );
-        }
+        ImGui::SameLine( 0, 0 );
+        const auto endPos = ImGui::GetCursorScreenPos();
+        const auto itemsWidth = ( endPos - startPos ).x;
+        const auto fixedWidth = 17 * ts.x;
+        ImGui::ItemSize( ImVec2( fixedWidth - itemsWidth, 0 ) );
         ImGui::SameLine( 0, ty );
     }
 
@@ -3135,7 +3436,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     }
     if( ImGui::IsItemHovered() )
     {
-        if( m_font ) ImGui::PopFont();
+        UnsetFont();
         ImGui::BeginTooltip();
         if( m_asmCountBase >= 0 )
         {
@@ -3159,7 +3460,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
             ImGui::Text( "+%" PRIx64, line.addr - m_baseAddr );
         }
         ImGui::EndTooltip();
-        if( m_font ) ImGui::PushFont( m_font );
+        SetFont();
 
         if( ImGui::IsItemClicked( 0 ) )
         {
@@ -3176,6 +3477,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     if( m_asmShowSourceLocation && !m_sourceFiles.empty() )
     {
         ImGui::SameLine();
+        ImVec2 startPos;
         uint32_t srcline;
         const auto srcidx = worker.GetLocationForAddress( line.addr, srcline );
         if( srcline != 0 )
@@ -3184,6 +3486,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
             const auto fileColor = GetHsvColor( srcidx.Idx(), 0 );
             SmallColorBox( fileColor );
             ImGui::SameLine();
+            startPos = ImGui::GetCursorScreenPos();
             char buf[64];
             const auto fnsz = strlen( fileName );
             if( fnsz < 30 - m_maxLine )
@@ -3199,7 +3502,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
             if( ImGui::IsItemHovered() )
             {
                 lineHovered = true;
-                if( m_font ) ImGui::PopFont();
+                UnsetFont();
                 ImGui::BeginTooltip();
                 if( worker.HasInlineSymbolAddresses() )
                 {
@@ -3223,56 +3526,13 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                     if( !m_sourceTooltip.empty() )
                     {
                         ImGui::Separator();
-                        if( m_font ) ImGui::PushFont( m_font );
-                        auto& lines = m_sourceTooltip.get();
-                        const int start = std::max( 0, (int)srcline - 4 );
-                        const int end = std::min<int>( m_sourceTooltip.get().size(), srcline + 3 );
-                        bool first = true;
-                        int bottomEmpty = 0;
-                        for( int i=start; i<end; i++ )
-                        {
-                            auto& line = lines[i];
-                            if( line.begin == line.end )
-                            {
-                                if( !first ) bottomEmpty++;
-                            }
-                            else
-                            {
-                                first = false;
-                                while( bottomEmpty > 0 )
-                                {
-                                    ImGui::TextUnformatted( "" );
-                                    bottomEmpty--;
-                                }
-
-                                auto ptr = line.begin;
-                                auto it = line.tokens.begin();
-                                while( ptr < line.end )
-                                {
-                                    if( it == line.tokens.end() )
-                                    {
-                                        ImGui::TextUnformatted( ptr, line.end );
-                                        ImGui::SameLine( 0, 0 );
-                                        break;
-                                    }
-                                    if( ptr < it->begin )
-                                    {
-                                        ImGui::TextUnformatted( ptr, it->begin );
-                                        ImGui::SameLine( 0, 0 );
-                                    }
-                                    TextColoredUnformatted( i == srcline-1 ? SyntaxColors[(int)it->color] : SyntaxColorsDimmed[(int)it->color], it->begin, it->end );
-                                    ImGui::SameLine( 0, 0 );
-                                    ptr = it->end;
-                                    ++it;
-                                }
-                                ImGui::ItemSize( ImVec2( 0, 0 ), 0 );
-                            }
-                        }
-                        if( m_font ) ImGui::PopFont();
+                        SetFont();
+                        PrintSourceFragment( m_sourceTooltip, srcline );
+                        UnsetFont();
                     }
                 }
                 ImGui::EndTooltip();
-                if( m_font ) ImGui::PushFont( m_font );
+                SetFont();
                 if( ImGui::IsItemClicked( 0 ) || ImGui::IsItemClicked( 1 ) )
                 {
                     if( m_source.filename() == fileName )
@@ -3299,17 +3559,20 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                     m_hoveredSource = srcidx.Idx();
                 }
             }
-            ImGui::SameLine( 0, 0 );
-            ImGui::ItemSize( ImVec2( stw * ( 32 - bufsz ), ty ), 0 );
         }
         else
         {
             SmallColorBox( 0 );
             ImGui::SameLine();
+            startPos = ImGui::GetCursorScreenPos();
             TextDisabledUnformatted( "[unknown]" );
-            ImGui::SameLine( 0, 0 );
-            ImGui::ItemSize( ImVec2( stw * 23, ty ), 0 );
         }
+        ImGui::SameLine( 0, 0 );
+        const auto endPos = ImGui::GetCursorScreenPos();
+        const auto itemsWidth = ( endPos - startPos ).x;
+        const auto fixedWidth = 32 * ts.x;
+        ImGui::ItemSize( ImVec2( fixedWidth - itemsWidth, 0 ) );
+
     }
     if( m_asmBytes )
     {
@@ -3324,8 +3587,13 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     }
     if( m_showJumps )
     {
+        ImGui::SameLine( 0, 0 );
+        const auto xoff = ImGui::GetCursorScreenPos().x - wpos.x + round( ty * 0.66f );
+        m_jumpOffset = xoff;
+
         const auto JumpArrow = JumpArrowBase * ty / 15;
-        ImGui::SameLine( 0, 2*ty + JumpArrow + m_maxJumpLevel * JumpSeparation );
+        const auto JumpSeparation = round( JumpSeparationBase * ts.y / 15 );
+        ImGui::SameLine( 0, ty + JumpArrow + m_maxJumpLevel * JumpSeparation );
         auto jit = m_jumpOut.find( line.addr );
         if( jit != m_jumpOut.end() )
         {
@@ -3333,12 +3601,6 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
             const auto th4 = floor( ts.y / 4 );
             const auto& mjl = m_maxJumpLevel;
             const auto col = GetHsvColor( line.jumpAddr, 6 );
-            const auto xoff =
-                ( ( iptotal.local + iptotal.ext == 0 ) ? 0 : ( 7 * ts.x + ts.y ) ) +
-                (3+maxAddrLen) * ts.x +
-                ( ( m_asmShowSourceLocation && !m_sourceFiles.empty() ) ? 36 * ts.x : 0 ) +
-                ( m_asmBytes ? m_maxAsmBytes*3 * ts.x : 0 ) +
-                ( showHwSamples ? ( 19 * ts.x + ts.y ) : 0 );
 
             DrawLine( draw, dpos + ImVec2( xoff + JumpSeparation * mjl + th2, th2 ), dpos + ImVec2( xoff + JumpSeparation * mjl + th2 + JumpArrow / 2, th2 ), col );
             DrawLine( draw, dpos + ImVec2( xoff + JumpSeparation * mjl + th2, th2 ), dpos + ImVec2( xoff + JumpSeparation * mjl + th2 + th4, th2 - th4 ), col );
@@ -3414,7 +3676,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     if( m_showLatency && asmVar && asmVar->minlat >= 0 )
     {
         const auto pos = ImVec2( (int)ImGui::GetCursorScreenPos().x, (int)ImGui::GetCursorScreenPos().y );
-        const auto ty = ImGui::GetFontSize();
+        const auto ty = ImGui::GetTextLineHeight();
 
         if( asmVar->minlat == 0 )
         {
@@ -3450,7 +3712,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
         memcpy( buf+m_maxMnemonicLen, line.operands.c_str(), line.operands.size() + 1 );
     }
 
-    const bool isInContext = !m_calcInlineStats || !worker.HasInlineSymbolAddresses() || worker.GetInlineSymbolForAddress( line.addr ) == m_symAddr;
+    const bool isInContext = IsInContext( worker, line.addr );
     if( asmIdx == m_asmSelected )
     {
         TextColoredUnformatted( ImVec4( 1, 0.25f, 0.25f, isInContext ? 1.f : 0.5f ), buf );
@@ -3513,7 +3775,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
         if( asmVar )
         {
             const auto& var = *asmVar;
-            if( m_font ) ImGui::PopFont();
+            UnsetFont();
             ImGui::BeginTooltip();
             if( jumpName || opdesc != 0 )
             {
@@ -3530,6 +3792,21 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                     }
                     ImGui::SameLine();
                     ImGui::Text( "%s+%" PRIu32, jumpName, jumpOffset );
+                    if( jumpBase == m_baseAddr )
+                    {
+                        uint32_t srcline;
+                        const auto srcidx = worker.GetLocationForAddress( line.jumpAddr, srcline );
+                        if( srcline != 0 )
+                        {
+                            const auto fileName = worker.GetString( srcidx );
+                            const auto fileColor = GetHsvColor( srcidx.Idx(), 0 );
+                            TextDisabledUnformatted( "Target location:" );
+                            ImGui::SameLine();
+                            SmallColorBox( fileColor );
+                            ImGui::SameLine();
+                            ImGui::Text( "%s:%i", fileName, srcline );
+                        }
+                    }
                 }
                 ImGui::Separator();
             }
@@ -3638,11 +3915,11 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                 }
             }
             ImGui::EndTooltip();
-            if( m_font ) ImGui::PushFont( m_font );
+            SetFont();
         }
         else if( jumpName )
         {
-            if( m_font ) ImGui::PopFont();
+            UnsetFont();
             ImGui::BeginTooltip();
             if( jumpBase == m_baseAddr )
             {
@@ -3654,14 +3931,29 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
             }
             ImGui::SameLine();
             ImGui::Text( "%s+%" PRIu32, jumpName, jumpOffset );
+            if( jumpBase == m_baseAddr )
+            {
+                uint32_t srcline;
+                const auto srcidx = worker.GetLocationForAddress( line.jumpAddr, srcline );
+                if( srcline != 0 )
+                {
+                    const auto fileName = worker.GetString( srcidx );
+                    const auto fileColor = GetHsvColor( srcidx.Idx(), 0 );
+                    TextDisabledUnformatted( "Target location:" );
+                    ImGui::SameLine();
+                    SmallColorBox( fileColor );
+                    ImGui::SameLine();
+                    ImGui::Text( "%s:%i", fileName, srcline );
+                }
+            }
             ImGui::EndTooltip();
-            if( m_font ) ImGui::PushFont( m_font );
+            SetFont();
         }
         if( m_cpuArch == CpuArchX86 || m_cpuArch == CpuArchX64 )
         {
             if( line.readX86[0] != RegsX86::invalid || line.writeX86[0] != RegsX86::invalid )
             {
-                if( m_font ) ImGui::PopFont();
+                UnsetFont();
                 ImGui::BeginTooltip();
                 if( asmVar ) ImGui::Separator();
                 if( line.readX86[0] != RegsX86::invalid )
@@ -3703,7 +3995,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
                     }
                 }
                 ImGui::EndTooltip();
-                if( m_font ) ImGui::PushFont( m_font );
+                SetFont();
             }
         }
         if( ImGui::IsMouseClicked( 0 ) )
@@ -3832,7 +4124,7 @@ void SourceView::RenderAsmLine( AsmLine& line, const AddrStat& ipcnt, const Addr
     DrawLine( draw, dpos + ImVec2( 0, ty+2 ), dpos + ImVec2( w, ty+2 ), 0x08FFFFFF );
 }
 
-void SourceView::RenderHwLinePart( size_t cycles, size_t retired, size_t branchRetired, size_t branchMiss, size_t cacheRef, size_t cacheMiss, const ImVec2& ts )
+void SourceView::RenderHwLinePart( size_t cycles, size_t retired, size_t branchRetired, size_t branchMiss, size_t cacheRef, size_t cacheMiss, size_t branchRel, size_t branchRelMax, size_t cacheRel, size_t cacheRelMax, const ImVec2& ts )
 {
     if( cycles )
     {
@@ -3841,7 +4133,7 @@ void SourceView::RenderHwLinePart( size_t cycles, size_t retired, size_t branchR
         uint32_t col = unreliable ? 0x44FFFFFF : GetGoodnessColor( ipc * 0.25f );
         if( ipc >= 10 )
         {
-            TextColoredUnformatted( col, "  10+  " );
+            TextColoredUnformatted( col, "  10+ " );
         }
         else
         {
@@ -3849,12 +4141,12 @@ void SourceView::RenderHwLinePart( size_t cycles, size_t retired, size_t branchR
             *buf = ' ';
             const auto end = PrintFloat( buf+1, buf+16, ipc, 2 );
             assert( end == buf + 5 );
-            memcpy( end, "  ", 3 );
+            memcpy( end, " ", 2 );
             TextColoredUnformatted( col, buf );
         }
         if( ImGui::IsItemHovered() )
         {
-            if( m_font ) ImGui::PopFont();
+            UnsetFont();
             ImGui::BeginTooltip();
             ImGui::TextUnformatted( "Instructions Per Cycle (IPC)" );
             ImGui::SameLine();
@@ -3864,153 +4156,267 @@ void SourceView::RenderHwLinePart( size_t cycles, size_t retired, size_t branchR
             TextFocused( "Retirements:", RealToString( retired ) );
             if( unreliable ) TextColoredUnformatted( 0xFF4444FF, "Not enough samples for reliable data!" );
             ImGui::EndTooltip();
-            if( m_font ) ImGui::PushFont( m_font );
+            SetFont();
         }
     }
     else
     {
-        ImGui::ItemSize( ImVec2( 7 * ts.x, ts.y ) );
+        ImGui::ItemSize( ImVec2( 6 * ts.x, ts.y ) );
     }
     ImGui::SameLine( 0, 0 );
-    if( branchRetired )
+    if( m_hwSamplesRelative )
     {
-        const bool unreliable = branchRetired < 10;
-        const float rate = float( branchMiss ) / branchRetired;
-        uint32_t col = unreliable ? 0x44FFFFFF : GetGoodnessColor( 1.f - rate * 3.f );
-        if( branchMiss == 0 )
+        if( branchRel && branchRelMax )
         {
-            TextColoredUnformatted( col, "   0%  " );
-        }
-        else if( rate >= 1.f )
-        {
-            TextColoredUnformatted( col, " 100%  " );
-        }
-        else
-        {
-            char buf[16];
-            if( rate >= 0.1f )
+            const float rate = float( branchRel ) / branchRelMax;
+            uint32_t col = GetGoodnessColor( 1.f - rate * 3.f );
+            if( rate >= 1.f )
             {
-                const auto end = PrintFloat( buf, buf+16, rate * 100, 1 );
-                assert( end == buf+4 );
+                TextColoredUnformatted( col, " 100% " );
             }
             else
             {
-                *buf = ' ';
-                const auto end = PrintFloat( buf+1, buf+16, rate * 100, 1 );
-                assert( end == buf+4 );
+                char buf[16];
+                if( rate >= 0.1f )
+                {
+                    const auto end = PrintFloat( buf, buf+16, rate * 100, 1 );
+                    assert( end == buf+4 );
+                }
+                else
+                {
+                    *buf = ' ';
+                    const auto end = PrintFloat( buf+1, buf+16, rate * 100, 1 );
+                    assert( end == buf+4 );
+                }
+                memcpy( buf+4, "% ", 3 );
+                TextColoredUnformatted( col, buf );
             }
-            memcpy( buf+4, "%  ", 4 );
-            TextColoredUnformatted( col, buf );
-        }
-        if( ImGui::IsItemHovered() )
-        {
-            if( m_font ) ImGui::PopFont();
-            ImGui::BeginTooltip();
-            ImGui::TextUnformatted( "Branch mispredictions rate" );
-            ImGui::SameLine();
-            TextDisabledUnformatted( "Lower is better" );
-            ImGui::Separator();
-            TextFocused( "Retired branches:", RealToString( branchRetired ) );
-            TextFocused( "Branch mispredictions:", RealToString( branchMiss ) );
-            if( unreliable ) TextColoredUnformatted( 0xFF4444FF, "Not enough samples for reliable data!" );
-            ImGui::EndTooltip();
-            if( m_font ) ImGui::PushFont( m_font );
-        }
-    }
-    else
-    {
-        ImGui::ItemSize( ImVec2( 7 * ts.x, ts.y ) );
-    }
-    ImGui::SameLine( 0, 0 );
-    if( cacheRef )
-    {
-        const bool unreliable = cacheRef < 10;
-        const float rate = float( cacheMiss ) / cacheRef;
-        uint32_t col = unreliable ? 0x44FFFFFF : GetGoodnessColor( 1.f - rate * 3.f );
-        if( cacheMiss == 0 )
-        {
-            TextColoredUnformatted( col, "   0%" );
-        }
-        else if( rate >= 1.f )
-        {
-            TextColoredUnformatted( col, " 100%" );
+            if( ImGui::IsItemHovered() )
+            {
+                UnsetFont();
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted( "Branch mispredictions impact" );
+                ImGui::SameLine();
+                TextDisabledUnformatted( "Lower is better" );
+                ImGui::Separator();
+                TextFocused( "Impact value:", RealToString( branchRel ) );
+                TextFocused( "Relative to:", RealToString( branchRelMax ) );
+                ImGui::EndTooltip();
+                SetFont();
+            }
         }
         else
         {
-            char buf[16];
-            if( rate >= 0.1f )
+            ImGui::ItemSize( ImVec2( 6 * ts.x, ts.y ) );
+        }
+        ImGui::SameLine( 0, 0 );
+        if( cacheRel && cacheRelMax )
+        {
+            const float rate = float( cacheRel ) / cacheRelMax;
+            uint32_t col = GetGoodnessColor( 1.f - rate * 3.f );
+            if( rate >= 1.f )
             {
-                const auto end = PrintFloat( buf, buf+16, rate * 100, 1 );
-                assert( end == buf+4 );
+                TextColoredUnformatted( col, " 100%" );
             }
             else
             {
-                *buf = ' ';
-                const auto end = PrintFloat( buf+1, buf+16, rate * 100, 1 );
-                assert( end == buf+4 );
+                char buf[16];
+                const auto end = PrintFloat( buf, buf+16, rate * 100, 1 );
+                memcpy( end, "%", 2 );
+                if( end - buf == 4 )
+                {
+                    TextColoredUnformatted( col, buf );
+                }
+                else
+                {
+                    ImGui::SameLine( 0, ts.x );
+                    TextColoredUnformatted( col, buf );
+                }
             }
-            memcpy( buf+4, "%", 2 );
-            TextColoredUnformatted( col, buf );
+            if( ImGui::IsItemHovered() )
+            {
+                UnsetFont();
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted( "Cache miss rate impact" );
+                ImGui::SameLine();
+                TextDisabledUnformatted( "Lower is better" );
+                ImGui::Separator();
+                TextFocused( "Impact value:", RealToString( cacheRel ) );
+                TextFocused( "Relative to:", RealToString( cacheRelMax ) );
+                ImGui::EndTooltip();
+                SetFont();
+            }
         }
-        if( ImGui::IsItemHovered() )
+        else
         {
-            if( m_font ) ImGui::PopFont();
-            ImGui::BeginTooltip();
-            ImGui::TextUnformatted( "Cache miss rate" );
-            ImGui::SameLine();
-            TextDisabledUnformatted( "Lower is better" );
-            ImGui::Separator();
-            TextFocused( "Cache references:", RealToString( cacheRef ) );
-            TextFocused( "Cache misses:", RealToString( cacheMiss ) );
-            if( unreliable ) TextColoredUnformatted( 0xFF4444FF, "Not enough samples for reliable data!" );
-            ImGui::EndTooltip();
-            if( m_font ) ImGui::PushFont( m_font );
+            ImGui::ItemSize( ImVec2( 5 * ts.x, ts.y ) );
         }
     }
     else
     {
-        ImGui::ItemSize( ImVec2( 5 * ts.x, ts.y ) );
+        if( branchRetired )
+        {
+            const bool unreliable = branchRetired < 10;
+            const float rate = float( branchMiss ) / branchRetired;
+            uint32_t col = unreliable ? 0x44FFFFFF : GetGoodnessColor( 1.f - rate * 3.f );
+            if( branchMiss == 0 )
+            {
+                TextColoredUnformatted( col, "   0% " );
+            }
+            else if( rate >= 1.f )
+            {
+                TextColoredUnformatted( col, " 100% " );
+            }
+            else
+            {
+                char buf[16];
+                if( rate >= 0.1f )
+                {
+                    const auto end = PrintFloat( buf, buf+16, rate * 100, 1 );
+                    assert( end == buf+4 );
+                }
+                else
+                {
+                    *buf = ' ';
+                    const auto end = PrintFloat( buf+1, buf+16, rate * 100, 1 );
+                    assert( end == buf+4 );
+                }
+                memcpy( buf+4, "% ", 3 );
+                TextColoredUnformatted( col, buf );
+            }
+            if( ImGui::IsItemHovered() )
+            {
+                UnsetFont();
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted( "Branch mispredictions rate" );
+                ImGui::SameLine();
+                TextDisabledUnformatted( "Lower is better" );
+                ImGui::Separator();
+                TextFocused( "Retired branches:", RealToString( branchRetired ) );
+                TextFocused( "Branch mispredictions:", RealToString( branchMiss ) );
+                if( unreliable ) TextColoredUnformatted( 0xFF4444FF, "Not enough samples for reliable data!" );
+                ImGui::EndTooltip();
+                SetFont();
+            }
+        }
+        else
+        {
+            ImGui::ItemSize( ImVec2( 6 * ts.x, ts.y ) );
+        }
+        ImGui::SameLine( 0, 0 );
+        if( cacheRef )
+        {
+            const bool unreliable = cacheRef < 10;
+            const float rate = float( cacheMiss ) / cacheRef;
+            uint32_t col = unreliable ? 0x44FFFFFF : GetGoodnessColor( 1.f - rate * 3.f );
+            if( cacheMiss == 0 )
+            {
+                TextColoredUnformatted( col, "   0%" );
+            }
+            else if( rate >= 1.f )
+            {
+                TextColoredUnformatted( col, " 100%" );
+            }
+            else
+            {
+                char buf[16];
+                if( rate >= 0.1f )
+                {
+                    const auto end = PrintFloat( buf, buf+16, rate * 100, 1 );
+                    assert( end == buf+4 );
+                }
+                else
+                {
+                    *buf = ' ';
+                    const auto end = PrintFloat( buf+1, buf+16, rate * 100, 1 );
+                    assert( end == buf+4 );
+                }
+                memcpy( buf+4, "%", 2 );
+                TextColoredUnformatted( col, buf );
+            }
+            if( ImGui::IsItemHovered() )
+            {
+                UnsetFont();
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted( "Cache miss rate" );
+                ImGui::SameLine();
+                TextDisabledUnformatted( "Lower is better" );
+                ImGui::Separator();
+                TextFocused( "Cache references:", RealToString( cacheRef ) );
+                TextFocused( "Cache misses:", RealToString( cacheMiss ) );
+                if( unreliable ) TextColoredUnformatted( 0xFF4444FF, "Not enough samples for reliable data!" );
+                ImGui::EndTooltip();
+                SetFont();
+            }
+        }
+        else
+        {
+            ImGui::ItemSize( ImVec2( 5 * ts.x, ts.y ) );
+        }
     }
 }
 
-void SourceView::SelectLine( uint32_t line, const Worker* worker, bool changeAsmLine, uint64_t targetAddr )
+void SourceView::SelectLine( uint32_t line, const Worker* worker, bool updateAsmLine, uint64_t targetAddr, bool changeAsmLine )
 {
     m_selectedLine = line;
     if( m_symAddr == 0 ) return;
     assert( worker );
-    SelectAsmLines( m_source.idx(), line, *worker, changeAsmLine, targetAddr );
+    SelectAsmLines( m_source.idx(), line, *worker, updateAsmLine, targetAddr, changeAsmLine );
 }
 
-void SourceView::SelectAsmLines( uint32_t file, uint32_t line, const Worker& worker, bool changeAsmLine, uint64_t targetAddr )
+void SourceView::SelectAsmLines( uint32_t file, uint32_t line, const Worker& worker, bool updateAsmLine, uint64_t targetAddr, bool changeAsmLine )
 {
     m_selectedAddresses.clear();
     auto addresses = worker.GetAddressesForLocation( file, line );
     if( addresses )
     {
         const auto& addr = *addresses;
-        if( changeAsmLine )
+        if( updateAsmLine )
         {
-            if( targetAddr != 0 )
+            for( auto& v : addr )
             {
-                m_targetAddr = targetAddr;
-            }
-            else
-            {
-                for( auto& v : addr )
+                if( v >= m_baseAddr && v < m_baseAddr + m_codeLen )
                 {
-                    if( v >= m_baseAddr && v < m_baseAddr + m_codeLen )
-                    {
-                        m_targetAddr = v;
-                        break;
-                    }
+                    if( IsInContext( worker, v ) ) m_selectedAddresses.emplace( v );
                 }
             }
-        }
-        for( auto& v : addr )
-        {
-            if( v >= m_baseAddr && v < m_baseAddr + m_codeLen )
+            if( targetAddr != 0 )
             {
-                m_selectedAddresses.emplace( v );
+                if( changeAsmLine ) m_targetAddr = targetAddr;
+            }
+            else if( !m_selectedAddresses.empty() )
+            {
+                if( m_asmTarget.file != file || m_asmTarget.line != line )
+                {
+                    m_asmTarget.file = file;
+                    m_asmTarget.line = line;
+                    m_asmTarget.sel = 0;
+                    m_asmTarget.target.clear();
+
+                    std::vector<uint64_t> tmp;
+                    tmp.reserve( m_selectedAddresses.size() );
+                    for( auto& v : m_selectedAddresses ) tmp.emplace_back( v );
+                    pdqsort_branchless( tmp.begin(), tmp.end() );
+
+                    bool first = true;
+                    auto lit = m_asm.begin();
+                    for( auto& v : tmp )
+                    {
+                        const auto prev = lit;
+                        while( lit->addr != v ) lit++;
+                        if( first || lit - prev > 1 )
+                        {
+                            first = false;
+                            m_asmTarget.target.emplace_back( v );
+                        }
+                    }
+                    if( changeAsmLine ) m_targetAddr = m_asmTarget.target[0];
+                }
+                else if( changeAsmLine )
+                {
+                    m_asmTarget.sel = ( m_asmTarget.sel + 1 ) % m_asmTarget.target.size();
+                    m_targetAddr = m_asmTarget.target[m_asmTarget.sel];
+                }
             }
         }
     }
@@ -4026,13 +4432,13 @@ void SourceView::SelectAsmLinesHover( uint32_t file, uint32_t line, const Worker
         {
             if( v >= m_baseAddr && v < m_baseAddr + m_codeLen )
             {
-                m_selectedAddressesHover.emplace( v );
+                if( IsInContext( worker, v ) ) m_selectedAddressesHover.emplace( v );
             }
         }
     }
 }
 
-void SourceView::GatherIpHwStats( AddrStat& iptotalSrc, AddrStat& iptotalAsm, unordered_flat_map<uint64_t, AddrStat>& ipcountSrc, unordered_flat_map<uint64_t, AddrStat>& ipcountAsm, AddrStat& ipmaxSrc, AddrStat& ipmaxAsm, Worker& worker, bool limitView, const View& view )
+void SourceView::GatherIpHwStats( AddrStatData& as, Worker& worker, const View& view, CostType cost )
 {
     auto filename = m_source.filename();
     for( auto& v : m_asm )
@@ -4044,7 +4450,7 @@ void SourceView::GatherIpHwStats( AddrStat& iptotalSrc, AddrStat& iptotalAsm, un
         uint64_t stat;
         if( view.m_statRange.active )
         {
-            switch( m_cost )
+            switch( cost )
             {
             case CostType::Cycles:          stat = CountHwSamples( hw->cycles, view.m_statRange ); break;
             case CostType::Retirements:     stat = CountHwSamples( hw->retired, view.m_statRange ); break;
@@ -4059,7 +4465,7 @@ void SourceView::GatherIpHwStats( AddrStat& iptotalSrc, AddrStat& iptotalAsm, un
         }
         else
         {
-            switch( m_cost )
+            switch( cost )
             {
             case CostType::Cycles:          stat = hw->cycles.size(); break;
             case CostType::Retirements:     stat = hw->retired.size(); break;
@@ -4072,10 +4478,10 @@ void SourceView::GatherIpHwStats( AddrStat& iptotalSrc, AddrStat& iptotalAsm, un
             default: assert( false ); return;
             }
         }
-        assert( ipcountAsm.find( addr ) == ipcountAsm.end() );
-        ipcountAsm.emplace( addr, AddrStat { stat, 0 } );
-        iptotalAsm.local += stat;
-        if( ipmaxAsm.local < stat ) ipmaxAsm.local = stat;
+        assert( as.ipCountAsm.find( addr ) == as.ipCountAsm.end() );
+        as.ipCountAsm.emplace( addr, AddrStat { stat, 0 } );
+        as.ipTotalAsm.local += stat;
+        if( as.ipMaxAsm.local < stat ) as.ipMaxAsm.local = stat;
 
         if( filename )
         {
@@ -4086,28 +4492,99 @@ void SourceView::GatherIpHwStats( AddrStat& iptotalSrc, AddrStat& iptotalAsm, un
                 auto ffn = worker.GetString( fref );
                 if( strcmp( ffn, filename ) == 0 )
                 {
-                    auto it = ipcountSrc.find( line );
-                    if( it == ipcountSrc.end() )
+                    auto it = as.ipCountSrc.find( line );
+                    if( it == as.ipCountSrc.end() )
                     {
-                        ipcountSrc.emplace( line, AddrStat{ stat, 0 } );
-                        if( ipmaxSrc.local < stat ) ipmaxSrc.local = stat;
+                        as.ipCountSrc.emplace( line, AddrStat{ stat, 0 } );
+                        if( as.ipMaxSrc.local < stat ) as.ipMaxSrc.local = stat;
                     }
                     else
                     {
                         const auto sum = it->second.local + stat;
                         it->second.local = sum;
-                        if( ipmaxSrc.local < sum ) ipmaxSrc.local = sum;
+                        if( as.ipMaxSrc.local < sum ) as.ipMaxSrc.local = sum;
                     }
-                    iptotalSrc.local += stat;
+                    as.ipTotalSrc.local += stat;
                 }
             }
         }
     }
 }
 
-void SourceView::GatherIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrStat& iptotalAsm, unordered_flat_map<uint64_t, AddrStat>& ipcountSrc, unordered_flat_map<uint64_t, AddrStat>& ipcountAsm, AddrStat& ipmaxSrc, AddrStat& ipmaxAsm, const Worker& worker, bool limitView, const View& view )
+void SourceView::CountHwStats( AddrStatData& as, Worker& worker, const View& view )
 {
-    const auto slzReady = worker.AreSourceLocationZonesReady();
+    const auto hasBranchRetirement = worker.HasHwBranchRetirement();
+    auto filename = m_source.filename();
+    for( auto& v : m_asm )
+    {
+        const auto& addr = v.addr;
+        if( m_calcInlineStats && worker.GetInlineSymbolForAddress( addr ) != m_symAddr ) continue;
+        const auto hw = worker.GetHwSampleData( addr );
+        if( !hw ) continue;
+        uint64_t branch, cache;
+        if( view.m_statRange.active )
+        {
+            if( hasBranchRetirement )
+            {
+                branch = sqrt( CountHwSamples( hw->branchMiss, view.m_statRange ) * CountHwSamples( hw->branchRetired, view.m_statRange ) );
+            }
+            else
+            {
+                branch = CountHwSamples( hw->branchMiss, view.m_statRange );
+            }
+            cache = sqrt( CountHwSamples( hw->cacheMiss, view.m_statRange ) * CountHwSamples( hw->cacheRef, view.m_statRange ) );
+        }
+        else
+        {
+            if( hasBranchRetirement )
+            {
+                branch = sqrt( hw->branchMiss.size() *  hw->branchRetired.size() );
+            }
+            else
+            {
+                branch = hw->branchMiss.size();
+            }
+            cache = sqrt( hw->cacheMiss.size() * hw->cacheRef.size() );
+        }
+        assert( as.hwCountAsm.find( addr ) == as.hwCountAsm.end() );
+        as.hwCountAsm.emplace( addr, AddrStat { branch, cache } );
+        if( as.hwMaxAsm.local < branch ) as.hwMaxAsm.local = branch;
+        if( as.hwMaxAsm.ext < cache ) as.hwMaxAsm.ext = cache;
+
+        if( filename )
+        {
+            uint32_t line;
+            const auto fref = worker.GetLocationForAddress( addr, line );
+            if( line != 0 )
+            {
+                auto ffn = worker.GetString( fref );
+                if( strcmp( ffn, filename ) == 0 )
+                {
+                    auto it = as.hwCountSrc.find( line );
+                    if( it == as.hwCountSrc.end() )
+                    {
+                        as.hwCountSrc.emplace( line, AddrStat{ branch, cache } );
+                        if( as.hwMaxSrc.local < branch ) as.hwMaxSrc.local = branch;
+                        if( as.hwMaxSrc.ext < cache ) as.hwMaxSrc.ext = cache;
+                    }
+                    else
+                    {
+                        const auto branchSum = it->second.local + branch;
+                        const auto cacheSum = it->second.ext + cache;
+                        it->second.local = branchSum;
+                        it->second.ext = cacheSum;
+                        if( as.hwMaxSrc.local < branchSum ) as.hwMaxSrc.local = branchSum;
+                        if( as.hwMaxSrc.ext < cacheSum ) as.hwMaxSrc.ext = cacheSum;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void SourceView::GatherIpStats( uint64_t baseAddr, AddrStatData& as, const Worker& worker, bool limitView, const View& view )
+{
+    const auto samplesReady = worker.AreSymbolSamplesReady();
     auto filename = m_source.filename();
     if( limitView )
     {
@@ -4116,7 +4593,7 @@ void SourceView::GatherIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrSta
         auto it = std::lower_bound( vec->begin(), vec->end(), view.m_statRange.min, [] ( const auto& lhs, const auto& rhs ) { return lhs.time.Val() < rhs; } );
         if( it == vec->end() ) return;
         auto end = std::lower_bound( it, vec->end(), view.m_statRange.max, [] ( const auto& lhs, const auto& rhs ) { return lhs.time.Val() < rhs; } );
-        iptotalAsm.local += end - it;
+        as.ipTotalAsm.local += end - it;
         while( it != end )
         {
             if( filename )
@@ -4130,36 +4607,36 @@ void SourceView::GatherIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrSta
                         const auto line = frame->data[0].line;
                         if( line != 0 )
                         {
-                            auto sit = ipcountSrc.find( line );
-                            if( sit == ipcountSrc.end() )
+                            auto sit = as.ipCountSrc.find( line );
+                            if( sit == as.ipCountSrc.end() )
                             {
-                                ipcountSrc.emplace( line, AddrStat { 1, 0 } );
-                                if( ipmaxSrc.local < 1 ) ipmaxSrc.local = 1;
+                                as.ipCountSrc.emplace( line, AddrStat { 1, 0 } );
+                                if( as.ipMaxSrc.local < 1 ) as.ipMaxSrc.local = 1;
                             }
                             else
                             {
                                 const auto sum = sit->second.local + 1;
                                 sit->second.local = sum;
-                                if( ipmaxSrc.local < sum ) ipmaxSrc.local = sum;
+                                if( as.ipMaxSrc.local < sum ) as.ipMaxSrc.local = sum;
                             }
-                            iptotalSrc.local++;
+                            as.ipTotalSrc.local++;
                         }
                     }
                 }
             }
 
             auto addr = worker.GetCanonicalPointer( it->ip );
-            auto sit = ipcountAsm.find( addr );
-            if( sit == ipcountAsm.end() )
+            auto sit = as.ipCountAsm.find( addr );
+            if( sit == as.ipCountAsm.end() )
             {
-                ipcountAsm.emplace( addr, AddrStat{ 1, 0 } );
-                if( ipmaxAsm.local < 1 ) ipmaxAsm.local = 1;
+                as.ipCountAsm.emplace( addr, AddrStat{ 1, 0 } );
+                if( as.ipMaxAsm.local < 1 ) as.ipMaxAsm.local = 1;
             }
             else
             {
                 const auto sum = sit->second.local + 1;
                 sit->second.local = sum;
-                if( ipmaxAsm.local < sum ) ipmaxAsm.local = sum;
+                if( as.ipMaxAsm.local < sum ) as.ipMaxAsm.local = sum;
             }
 
             ++it;
@@ -4172,14 +4649,10 @@ void SourceView::GatherIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrSta
         for( auto& ip : *ipmap )
         {
             auto addr = worker.GetCanonicalPointer( ip.first );
-            assert( ipcountAsm.find( addr ) == ipcountAsm.end() );
-            auto cp = slzReady ? worker.GetChildSamples( addr ) : nullptr;
-            const auto ccnt = cp ? cp->size() : 0;
-            ipcountAsm.emplace( addr, AddrStat { ip.second, ccnt } );
-            iptotalAsm.local += ip.second;
-            iptotalAsm.ext += ccnt;
-            if( ipmaxAsm.local < ip.second ) ipmaxAsm.local = ip.second;
-            if( ipmaxAsm.ext < ccnt ) ipmaxAsm.ext = ccnt;
+            assert( as.ipCountAsm.find( addr ) == as.ipCountAsm.end() );
+            as.ipCountAsm.emplace( addr, AddrStat { ip.second, 0 } );
+            as.ipTotalAsm.local += ip.second;
+            if( as.ipMaxAsm.local < ip.second ) as.ipMaxAsm.local = ip.second;
 
             if( filename )
             {
@@ -4192,24 +4665,19 @@ void SourceView::GatherIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrSta
                         const auto line = frame->data[0].line;
                         if( line != 0 )
                         {
-                            auto it = ipcountSrc.find( line );
-                            if( it == ipcountSrc.end() )
+                            auto it = as.ipCountSrc.find( line );
+                            if( it == as.ipCountSrc.end() )
                             {
-                                ipcountSrc.emplace( line, AddrStat{ ip.second, ccnt } );
-                                if( ipmaxSrc.local < ip.second ) ipmaxSrc.local = ip.second;
-                                if( ipmaxSrc.ext < ccnt ) ipmaxSrc.ext = ccnt;
+                                as.ipCountSrc.emplace( line, AddrStat{ ip.second, 0 } );
+                                if( as.ipMaxSrc.local < ip.second ) as.ipMaxSrc.local = ip.second;
                             }
                             else
                             {
                                 const auto sum = it->second.local + ip.second;
-                                const auto csum = it->second.ext + ccnt;
                                 it->second.local = sum;
-                                it->second.ext = csum;
-                                if( ipmaxSrc.local < sum ) ipmaxSrc.local = sum;
-                                if( ipmaxSrc.ext < csum ) ipmaxSrc.ext = csum;
+                                if( as.ipMaxSrc.local < sum ) as.ipMaxSrc.local = sum;
                             }
-                            iptotalSrc.local += ip.second;
-                            iptotalSrc.ext += ccnt;
+                            as.ipTotalSrc.local += ip.second;
                         }
                     }
                 }
@@ -4218,9 +4686,9 @@ void SourceView::GatherIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrSta
     }
 }
 
-void SourceView::GatherAdditionalIpStats( uint64_t baseAddr, AddrStat& iptotalSrc, AddrStat& iptotalAsm, unordered_flat_map<uint64_t, AddrStat>& ipcountSrc, unordered_flat_map<uint64_t, AddrStat>& ipcountAsm, AddrStat& ipmaxSrc, AddrStat& ipmaxAsm, const Worker& worker, bool limitView, const View& view )
+void SourceView::GatherAdditionalIpStats( uint64_t baseAddr, AddrStatData& as, const Worker& worker, bool limitView, const View& view )
 {
-    if( !worker.AreSourceLocationZonesReady() ) return;
+    if( !worker.AreSymbolSamplesReady() ) return;
     auto sym = worker.GetSymbolData( baseAddr );
     if( !sym ) return;
 
@@ -4229,16 +4697,23 @@ void SourceView::GatherAdditionalIpStats( uint64_t baseAddr, AddrStat& iptotalSr
     {
         for( uint64_t ip = baseAddr; ip < baseAddr + sym->size.Val(); ip++ )
         {
-            if( ipcountAsm.find( ip ) != ipcountAsm.end() ) continue;
             auto cp = worker.GetChildSamples( ip );
             if( !cp ) continue;
-            auto it = std::lower_bound( cp->begin(), cp->end(), view.m_statRange.min, [] ( const auto& lhs, const auto& rhs ) { return lhs.Val() < rhs; } );
+            auto it = std::lower_bound( cp->begin(), cp->end(), view.m_statRange.min, [] ( const auto& lhs, const auto& rhs ) { return lhs.time.Val() < rhs; } );
             if( it == cp->end() ) continue;
-            auto end = std::lower_bound( it, cp->end(), view.m_statRange.max, [] ( const auto& lhs, const auto& rhs ) { return lhs.Val() < rhs; } );
+            auto end = std::lower_bound( it, cp->end(), view.m_statRange.max, [] ( const auto& lhs, const auto& rhs ) { return lhs.time.Val() < rhs; } );
             const auto ccnt = uint64_t( end - it );
-            ipcountAsm.emplace( ip, AddrStat { 0, ccnt } );
-            iptotalAsm.ext += ccnt;
-            if( ipmaxAsm.ext < ccnt ) ipmaxAsm.ext = ccnt;
+            auto eit = as.ipCountAsm.find( ip );
+            if( eit == as.ipCountAsm.end() )
+            {
+                as.ipCountAsm.emplace( ip, AddrStat { 0, ccnt } );
+            }
+            else
+            {
+                eit->second.ext += ccnt;
+            }
+            as.ipTotalAsm.ext += ccnt;
+            if( as.ipMaxAsm.ext < ccnt ) as.ipMaxAsm.ext = ccnt;
 
             if( filename )
             {
@@ -4251,19 +4726,19 @@ void SourceView::GatherAdditionalIpStats( uint64_t baseAddr, AddrStat& iptotalSr
                         const auto line = frame->data[0].line;
                         if( line != 0 )
                         {
-                            auto it = ipcountSrc.find( line );
-                            if( it == ipcountSrc.end() )
+                            auto sit = as.ipCountSrc.find( line );
+                            if( sit == as.ipCountSrc.end() )
                             {
-                                ipcountSrc.emplace( line, AddrStat{ 0, ccnt } );
-                                if( ipmaxSrc.ext < ccnt ) ipmaxSrc.ext = ccnt;
+                                as.ipCountSrc.emplace( line, AddrStat{ 0, ccnt } );
+                                if( as.ipMaxSrc.ext < ccnt ) as.ipMaxSrc.ext = ccnt;
                             }
                             else
                             {
-                                const auto csum = it->second.ext + ccnt;
-                                it->second.ext = csum;
-                                if( ipmaxSrc.ext < csum ) ipmaxSrc.ext = csum;
+                                const auto csum = sit->second.ext + ccnt;
+                                sit->second.ext = csum;
+                                if( as.ipMaxSrc.ext < csum ) as.ipMaxSrc.ext = csum;
                             }
-                            iptotalSrc.ext += ccnt;
+                            as.ipTotalSrc.ext += ccnt;
                         }
                     }
                 }
@@ -4274,13 +4749,20 @@ void SourceView::GatherAdditionalIpStats( uint64_t baseAddr, AddrStat& iptotalSr
     {
         for( uint64_t ip = baseAddr; ip < baseAddr + sym->size.Val(); ip++ )
         {
-            if( ipcountAsm.find( ip ) != ipcountAsm.end() ) continue;
             auto cp = worker.GetChildSamples( ip );
             if( !cp ) continue;
             const auto ccnt = cp->size();
-            ipcountAsm.emplace( ip, AddrStat { 0, ccnt } );
-            iptotalAsm.ext += ccnt;
-            if( ipmaxAsm.ext < ccnt ) ipmaxAsm.ext = ccnt;
+            auto eit = as.ipCountAsm.find( ip );
+            if( eit == as.ipCountAsm.end() )
+            {
+                as.ipCountAsm.emplace( ip, AddrStat { 0, ccnt } );
+            }
+            else
+            {
+                eit->second.ext += ccnt;
+            }
+            as.ipTotalAsm.ext += ccnt;
+            if( as.ipMaxAsm.ext < ccnt ) as.ipMaxAsm.ext = ccnt;
 
             if( filename )
             {
@@ -4293,21 +4775,74 @@ void SourceView::GatherAdditionalIpStats( uint64_t baseAddr, AddrStat& iptotalSr
                         const auto line = frame->data[0].line;
                         if( line != 0 )
                         {
-                            auto it = ipcountSrc.find( line );
-                            if( it == ipcountSrc.end() )
+                            auto sit = as.ipCountSrc.find( line );
+                            if( sit == as.ipCountSrc.end() )
                             {
-                                ipcountSrc.emplace( line, AddrStat{ 0, ccnt } );
-                                if( ipmaxSrc.ext < ccnt ) ipmaxSrc.ext = ccnt;
+                                as.ipCountSrc.emplace( line, AddrStat{ 0, ccnt } );
+                                if( as.ipMaxSrc.ext < ccnt ) as.ipMaxSrc.ext = ccnt;
                             }
                             else
                             {
-                                const auto csum = it->second.ext + ccnt;
-                                it->second.ext = csum;
-                                if( ipmaxSrc.ext < csum ) ipmaxSrc.ext = csum;
+                                const auto csum = sit->second.ext + ccnt;
+                                sit->second.ext = csum;
+                                if( as.ipMaxSrc.ext < csum ) as.ipMaxSrc.ext = csum;
                             }
-                            iptotalSrc.ext += ccnt;
+                            as.ipTotalSrc.ext += ccnt;
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+void SourceView::GatherChildStats( uint64_t baseAddr, unordered_flat_map<uint64_t, uint32_t>& map, Worker& worker, bool limitView, const View& view )
+{
+    if( !worker.AreSymbolSamplesReady() ) return;
+    auto sym = worker.GetSymbolData( baseAddr );
+    if( !sym ) return;
+    if( limitView )
+    {
+        for( uint64_t ip = baseAddr; ip < baseAddr + sym->size.Val(); ip++ )
+        {
+            auto cp = worker.GetChildSamples( ip );
+            if( !cp ) continue;
+            auto it = std::lower_bound( cp->begin(), cp->end(), view.m_statRange.min, [] ( const auto& lhs, const auto& rhs ) { return lhs.time.Val() < rhs; } );
+            if( it == cp->end() ) continue;
+            auto end = std::lower_bound( it, cp->end(), view.m_statRange.max, [] ( const auto& lhs, const auto& rhs ) { return lhs.time.Val() < rhs; } );
+            while( it != end )
+            {
+                auto child = worker.GetSymbolForAddress( it->addr );
+                auto mit = map.find( child );
+                if( mit == map.end() )
+                {
+                    map.emplace( child, 1 );
+                }
+                else
+                {
+                    mit->second++;
+                }
+                ++it;
+            }
+        }
+    }
+    else
+    {
+        for( uint64_t ip = baseAddr; ip < baseAddr + sym->size.Val(); ip++ )
+        {
+            auto cp = worker.GetChildSamples( ip );
+            if( !cp ) continue;
+            for( auto& s : *cp )
+            {
+                auto child = worker.GetSymbolForAddress( s.addr );
+                auto mit = map.find( child );
+                if( mit == map.end() )
+                {
+                    map.emplace( child, 1 );
+                }
+                else
+                {
+                    mit->second++;
                 }
             }
         }
@@ -4525,14 +5060,20 @@ void SourceView::CheckWrite( size_t line, RegsX86 reg, size_t limit )
     }
 }
 
+bool SourceView::IsInContext( const Worker& worker, uint64_t addr ) const
+{
+    return !m_calcInlineStats || !worker.HasInlineSymbolAddresses() || worker.GetInlineSymbolForAddress( addr ) == m_symAddr;
+}
+
 #ifndef TRACY_NO_FILESELECTOR
 void SourceView::Save( const Worker& worker, size_t start, size_t stop )
 {
     assert( start < m_asm.size() );
     assert( start < stop );
 
-    nfdchar_t* fn;
-    auto res = NFD_SaveDialog( "asm", nullptr, &fn, m_gwcb ? m_gwcb() : nullptr );
+    nfdu8filteritem_t filter = { "Assembly file", "asm" };
+    nfdu8char_t* fn;
+    auto res = NFD_SaveDialogU8( &fn, &filter, 1, nullptr, nullptr );
     if( res == NFD_OKAY )
     {
         FILE* f = nullptr;
@@ -4606,8 +5147,19 @@ void SourceView::Save( const Worker& worker, size_t start, size_t stop )
             }
             fclose( f );
         }
+        NFD_FreePathU8( fn );
     }
 }
 #endif
+
+void SourceView::SetFont()
+{
+    if( m_font ) ImGui::PushFont( m_font );
+}
+
+void SourceView::UnsetFont()
+{
+    if( m_font ) ImGui::PopFont();
+}
 
 }

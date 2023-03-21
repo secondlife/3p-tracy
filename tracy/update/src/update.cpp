@@ -15,9 +15,7 @@
 #include "../../zstd/zstd.h"
 #include "../../getopt/getopt.h"
 
-#ifdef __CYGWIN__
-#  define ftello64(x) ftello(x)
-#elif defined __APPLE__
+#ifdef __APPLE__
 #  define ftello64(x) ftello(x)
 #elif defined _WIN32
 #  define ftello64(x) _ftelli64(x)
@@ -33,6 +31,7 @@ void Usage()
     printf( "  -s flags: strip selected data from capture:\n" );
     printf( "      l: locks, m: messages, p: plots, M: memory, i: frame images\n" );
     printf( "      c: context switches, s: sampling data, C: symbol code, S: source cache\n" );
+    printf( "  -c: scan for source files missing in cache and add if found\n" );
     exit( 1 );
 }
 
@@ -50,8 +49,9 @@ int main( int argc, char** argv )
     uint32_t events = tracy::EventType::All;
     int zstdLevel = 1;
     bool buildDict = false;
+    bool cacheSource = false;
     int c;
-    while( ( c = getopt( argc, argv, "hez:ds:" ) ) != -1 )
+    while( ( c = getopt( argc, argv, "hez:ds:c" ) ) != -1 )
     {
         switch( c )
         {
@@ -115,6 +115,9 @@ int main( int argc, char** argv )
             while( *++optarg != '\0' );
             break;
         }
+        case 'c':
+            cacheSource = true;
+            break;
         default:
             Usage();
             break;
@@ -146,6 +149,8 @@ int main( int argc, char** argv )
 #ifndef TRACY_NO_STATISTICS
             while( !worker.AreSourceLocationZonesReady() ) std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
 #endif
+
+            if( cacheSource ) worker.CacheSourceFiles();
 
             auto w = std::unique_ptr<tracy::FileWrite>( tracy::FileWrite::Open( output, clev, zstdLevel ) );
             if( !w )

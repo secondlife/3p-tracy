@@ -6,7 +6,7 @@
       <key>canonical_repo</key>
       <string>https://github.com/secondlife/3p-tracy</string>
       <key>copyright</key>
-      <string>Copyright (c) 2017-2021, Bartosz Taudul (wolf@nereid.pl)</string>
+      <string>Copyright (c) 2017-2022, Bartosz Taudul (wolf@nereid.pl)</string>
       <key>description</key>
       <string>Tracy Profiler Library</string>
       <key>license</key>
@@ -61,13 +61,35 @@
           <key>manifest</key>
           <array>
             <string>include/tracy/*.hpp</string>
+            <string>include/tracy/*.h</string>
             <string>include/tracy/common/*.hpp</string>
             <string>include/tracy/common/*.h</string>
             <string>include/tracy/client/*.hpp</string>
             <string>include/tracy/client/*.h</string>
+            <string>include/tracy/libbacktrace/*.hpp</string>
+            <string>include/tracy/libbacktrace/*.h</string>
           </array>
           <key>name</key>
           <string>common</string>
+        </map>
+        <key>darwin64</key>
+        <map>
+          <key>configurations</key>
+          <map>
+            <key>RelWithDebInfo</key>
+            <map>
+              <key>default</key>
+              <string>True</string>
+              <key>name</key>
+              <string>RelWithDebInfo</string>
+            </map>
+          </map>
+          <key>manifest</key>
+          <array>
+              <string>lib/release/libTracyClient.a</string>
+          </array>
+          <key>name</key>
+          <string>darwin64</string>
         </map>
         <key>linux</key>
         <map>
@@ -83,6 +105,10 @@
               <string>default</string>
             </map>
           </map>
+          <key>manifest</key>
+          <array>
+              <string>lib/release/libTracyClient.a</string>
+          </array>
           <key>name</key>
           <string>linux</string>
         </map>
@@ -129,7 +155,7 @@
           </map>
           <key>manifest</key>
           <array>
-            <string>lib/release/tracy.lib</string>
+            <string>lib/release/TracyClient.lib</string>
           </array>
           <key>name</key>
           <string>windows</string>
