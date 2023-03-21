@@ -62,7 +62,8 @@ pushd "$source_dir"
         ;;
 
         darwin*)
-            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}" \
+                    -DCMAKE_C_FLAGS="$LL_BUILD_RELEASE"
             make
             make install
 
