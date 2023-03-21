@@ -43,7 +43,7 @@ pushd "$source_dir"
         windows*)
             load_vsvars
 
-            cmake . -G "$AUTOBUILD_WIN_CMAKE_GEN" -DCMAKE_C_FLAGS="$LL_BUILD_RELEASE"
+            cmake . -G "$AUTOBUILD_WIN_CMAKE_GEN" -DCMAKE_CXX_FLAGS="$LL_BUILD_RELEASE"
             build_sln "tracy.sln" "Release|$AUTOBUILD_WIN_VSPLATFORM" "tracy"
 
             mkdir -p "$stage_dir/lib/release"
@@ -63,7 +63,7 @@ pushd "$source_dir"
 
         darwin*)
             cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}" \
-                    -DCMAKE_C_FLAGS="$LL_BUILD_RELEASE"
+                    -DCMAKE_CXX_FLAGS="$LL_BUILD_RELEASE"
             make
             make install
 
