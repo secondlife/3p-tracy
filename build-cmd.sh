@@ -62,7 +62,7 @@ pushd "$source_dir"
         ;;
 
         darwin*)
-			cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
+            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}"
             make
             make install
 
@@ -71,7 +71,7 @@ pushd "$source_dir"
 
             mkdir -p "$stage_dir/include/tracy"
             cp Tracy.hpp "$stage_dir/include/tracy/"
-			cp TracyOpenGL.hpp "$stage_dir/include/tracy/"
+            cp TracyOpenGL.hpp "$stage_dir/include/tracy/"
 
             rm -r "$stage_dir/lib/cmake"
         ;;
