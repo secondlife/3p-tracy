@@ -1,7 +1,7 @@
 CFLAGS +=
 CXXFLAGS := $(CFLAGS) -std=c++17
-DEFINES += -DIMGUI_IMPL_OPENGL_LOADER_GL3W -DIMGUI_ENABLE_FREETYPE
-INCLUDES := $(shell pkg-config --cflags glfw3 freetype2 capstone) -I../../../imgui -I../../libs/gl3w
+DEFINES += -DIMGUI_ENABLE_FREETYPE
+INCLUDES := $(shell pkg-config --cflags glfw3 freetype2 capstone) -I../../../imgui
 LIBS := $(shell pkg-config --libs glfw3 freetype2 capstone) -lpthread -ldl
 
 DISPLAY_SERVER := X11
@@ -27,9 +27,9 @@ else
 		SRC3 += ../../../nfd/nfd_cocoa.m
 		LIBS +=  -framework CoreFoundation -framework AppKit
 	else
-		SRC2 += ../../../nfd/nfd_gtk.c
-		INCLUDES += $(shell pkg-config --cflags gtk+-3.0)
-		LIBS += $(shell pkg-config --libs gtk+-3.0)
+		SRC += ../../../nfd/nfd_portal.cpp
+		INCLUDES += $(shell pkg-config --cflags dbus-1)
+		LIBS += $(shell pkg-config --libs dbus-1)
 	endif
 endif
 

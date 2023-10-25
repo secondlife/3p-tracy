@@ -13,9 +13,6 @@
     <Filter Include="imgui">
       <UniqueIdentifier>{474aec57-4ecd-467e-aecb-cdc4f41254ff}</UniqueIdentifier>
     </Filter>
-    <Filter Include="gl3w">
-      <UniqueIdentifier>{ec4b32ba-a8c9-49e8-9625-8cb15feccd8a}</UniqueIdentifier>
-    </Filter>
     <Filter Include="nfd">
       <UniqueIdentifier>{46eb6aa0-de1c-447a-a6dd-aee2a06f85ef}</UniqueIdentifier>
     </Filter>
@@ -60,17 +57,8 @@
     <ClCompile Include="..\..\src\NativeWindow.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\libs\gl3w\GL\gl3w.c">
-      <Filter>gl3w</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\server\TracyMemory.cpp">
       <Filter>server</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\nfd\nfd_common.c">
-      <Filter>nfd</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\nfd\nfd_win.cpp">
-      <Filter>nfd</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\server\TracyBadVersion.cpp">
       <Filter>server</Filter>
@@ -252,6 +240,9 @@
     <ClCompile Include="..\..\..\server\TracyWeb.cpp">
       <Filter>server</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\nfd\nfd_win.cpp">
+      <Filter>nfd</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\common\tracy_lz4.hpp">
@@ -281,26 +272,11 @@
     <ClInclude Include="..\..\..\server\TracyView.hpp">
       <Filter>server</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\libs\gl3w\GL\gl3w.h">
-      <Filter>gl3w</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\libs\gl3w\GL\glcorearb.h">
-      <Filter>gl3w</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\server\TracyImGui.hpp">
       <Filter>server</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\server\TracyMemory.hpp">
       <Filter>server</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\nfd\common.h">
-      <Filter>nfd</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\nfd\nfd.h">
-      <Filter>nfd</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\nfd\nfd_common.h">
-      <Filter>nfd</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\server\TracyFileRead.hpp">
       <Filter>server</Filter>
@@ -584,6 +560,21 @@
     <ClInclude Include="..\..\..\server\TracyWeb.hpp">
       <Filter>server</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\imgui_impl_opengl3_loader.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\FiraCodeRetina.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\zstd\common\portability_macros.h">
+      <Filter>zstd\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\zstd\compress\clevels.h">
+      <Filter>zstd\compress</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\nfd\nfd.h">
+      <Filter>nfd</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="DebugVis.natvis" />
@@ -593,5 +584,10 @@
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="Tracy.manifest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\zstd\decompress\huf_decompress_amd64.S">
+      <Filter>zstd\decompress</Filter>
+    </None>
   </ItemGroup>
 </Project>
