@@ -35,7 +35,7 @@ srcenv_file="$tmp_dir/ab_srcenv.sh"
 
 build_id=${AUTOBUILD_BUILD_ID:=0}
 tracy_version="$(sed -n -E 's/(v[0-9]+\.[0-9]+\.[0-9]+) \(.+\)/\1/p' tracy/NEWS | head -1)"
-echo "${tracy_version}.${build_id}" > "${stage_dir}/VERSION.txt"
+echo "${tracy_version}-${build_id}" > "${stage_dir}/VERSION.txt"
 
 source_dir="tracy"
 pushd "$source_dir"
