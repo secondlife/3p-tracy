@@ -16,7 +16,7 @@ jobs:
     continue-on-error: true
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: secondlife/action-autobuild@v3
+      - uses: secondlife/action-autobuild@v4
         with:
           addrsize: ${{ matrix.addrsize }}
   release:
