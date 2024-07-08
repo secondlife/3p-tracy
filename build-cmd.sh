@@ -76,21 +76,21 @@ pushd "$source_dir"
     esac
 
 # Common code that copies headers to packages/include/
-	mkdir -p "$stage_dir/include/tracy"
-	cp *.hpp "$stage_dir/include/tracy/"
-	cp *.h   "$stage_dir/include/tracy/"
+	mkdir -p "$stage_dir/include/tracy/tracy"
+	cp public/tracy/*.hpp "$stage_dir/include/tracy/tracy/"
+	cp public/tracy/*.h   "$stage_dir/include/tracy/tracy/"
 
     mkdir -p        "$stage_dir/include/tracy/common"
-    cp common/*.hpp "$stage_dir/include/tracy/common"
-    cp common/*.h   "$stage_dir/include/tracy/common"
+    cp public/common/*.hpp "$stage_dir/include/tracy/common"
+    cp public/common/*.h   "$stage_dir/include/tracy/common"
 
     mkdir -p        "$stage_dir/include/tracy/client"
-    cp client/*.hpp "$stage_dir/include/tracy/client"
-    cp client/*.h   "$stage_dir/include/tracy/client"
+    cp public/client/*.hpp "$stage_dir/include/tracy/client"
+    cp public/client/*.h   "$stage_dir/include/tracy/client"
 
     mkdir -p              "$stage_dir/include/tracy/libbacktrace"
-    cp libbacktrace/*.hpp "$stage_dir/include/tracy/libbacktrace"
-    cp libbacktrace/*.h   "$stage_dir/include/tracy/libbacktrace"
+    cp public/libbacktrace/*.hpp "$stage_dir/include/tracy/libbacktrace"
+    cp public/libbacktrace/*.h   "$stage_dir/include/tracy/libbacktrace"
 popd
 
 # copy license file
