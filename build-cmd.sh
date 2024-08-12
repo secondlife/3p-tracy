@@ -38,59 +38,127 @@ tracy_version="$(sed -n -E 's/(v[0-9]+\.[0-9]+\.[0-9]+) \(.+\)/\1/p' tracy/NEWS 
 echo "${tracy_version}.${build_id}" > "${stage_dir}/VERSION.txt"
 
 source_dir="tracy"
-pushd "$source_dir"
+
+mkdir -p "build"
+pushd "build"
     case "$AUTOBUILD_PLATFORM" in
         windows*)
             load_vsvars
+            mkdir -p "$stage_dir/bin"
+            mkdir -p "capture"
+            pushd "capture"
+                cmake $(cygpath -m "$top/$source_dir/capture") -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
 
-            cmake . -G "$AUTOBUILD_WIN_CMAKE_GEN" -DCMAKE_CXX_FLAGS="$LL_BUILD_RELEASE"
-            build_sln "tracy.sln" "Release|$AUTOBUILD_WIN_VSPLATFORM" "TracyClient"
+                cp -a tracy-capture.exe $stage_dir/bin
+            popd
 
-            mkdir -p "$stage_dir/lib/release"
-            mv Release/TracyClient.lib "$stage_dir/lib/release"
+            mkdir -p "csvexport"
+            pushd "csvexport"
+                cmake $(cygpath -m "$top/$source_dir/csvexport") -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
 
+                cp -a tracy-csvexport.exe $stage_dir/bin
+            popd
+
+            mkdir -p "profiler"
+            pushd "profiler"
+                cmake $(cygpath -m "$top/$source_dir/profiler") -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
+
+                cp -a tracy-profiler.exe $stage_dir/bin
+            popd
+
+            mkdir -p "update"
+            pushd "update"
+                cmake $(cygpath -m "$top/$source_dir/update") -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
+
+                cp -a tracy-update.exe $stage_dir/bin
+            popd
 # See common code below that copies haders to packages/include/
         ;;
 
         darwin*)
-            cmake . -DCMAKE_OSX_ARCHITECTURES="x86_64" -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}" \
-                    -DCMAKE_CXX_FLAGS="$LL_BUILD_RELEASE"
-            cmake --build .
+            export MACOSX_DEPLOYMENT_TARGET="$LL_BUILD_DARWIN_DEPLOY_TARGET"
 
-            mkdir -p "$stage_dir/lib/release"
-            cp -a libTracyClient.a "$stage_dir/lib/release"
+            mkdir -p "$stage_dir/bin"
+            mkdir -p "capture"
+            pushd "capture"
+                cmake "$top/$source_dir/capture" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake --build . --config Release
 
+                cp -a tracy-capture $stage_dir/bin
+            popd
+
+            mkdir -p "csvexport"
+            pushd "csvexport"
+                cmake "$top/$source_dir/csvexport" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake --build . --config Release
+
+                cp -a tracy-csvexport $stage_dir/bin
+            popd
+
+            mkdir -p "profiler"
+            pushd "profiler"
+                cmake "$top/$source_dir/profiler" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake --build . --config Release
+
+                cp -a tracy-profiler $stage_dir/bin
+            popd
+
+            mkdir -p "update"
+            pushd "update"
+                cmake "$top/$source_dir/update" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake --build . --config Release
+
+                cp -a tracy-update $stage_dir/bin
+            popd
 # See common code below that copies haders to packages/include/
         ;;
 
         linux*)
-            cmake . -DCMAKE_INSTALL_PREFIX:STRING="${stage_dir}" \
-                    -DCMAKE_CXX_FLAGS="$LL_BUILD_RELEASE"
-            cmake --build .
+            mkdir -p "$stage_dir/bin"
+            mkdir -p "capture"
+            pushd "capture"
+                cmake "$top/$source_dir/capture" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
 
-            mkdir -p "$stage_dir/lib/release"
-            cp -a libTracyClient.a "$stage_dir/lib/release"
+                cp -a tracy-capture $stage_dir/bin
+            popd
 
+            mkdir -p "csvexport"
+            pushd "csvexport"
+                cmake "$top/$source_dir/csvexport" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
+
+                cp -a tracy-csvexport $stage_dir/bin
+            popd
+
+            mkdir -p "profiler"
+            pushd "profiler"
+                cmake "$top/$source_dir/profiler" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEGACY=ON
+                cmake --build . --config Release
+
+                cp -a tracy-profiler $stage_dir/bin
+            popd
+
+            mkdir -p "update"
+            pushd "update"
+                cmake "$top/$source_dir/update" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake --build . --config Release
+
+                cp -a tracy-update $stage_dir/bin
+            popd
 # See common code below that copies haders to packages/include/
         ;;
     esac
+popd
 
 # Common code that copies headers to packages/include/
-	mkdir -p "$stage_dir/include/tracy/tracy"
-	cp public/tracy/*.hpp "$stage_dir/include/tracy/tracy/"
-	cp public/tracy/*.h   "$stage_dir/include/tracy/tracy/"
-
-    mkdir -p        "$stage_dir/include/tracy/common"
-    cp public/common/*.hpp "$stage_dir/include/tracy/common"
-    cp public/common/*.h   "$stage_dir/include/tracy/common"
-
-    mkdir -p        "$stage_dir/include/tracy/client"
-    cp public/client/*.hpp "$stage_dir/include/tracy/client"
-    cp public/client/*.h   "$stage_dir/include/tracy/client"
-
-    mkdir -p              "$stage_dir/include/tracy/libbacktrace"
-    cp public/libbacktrace/*.hpp "$stage_dir/include/tracy/libbacktrace"
-    cp public/libbacktrace/*.h   "$stage_dir/include/tracy/libbacktrace"
+pushd "$source_dir"
+	mkdir -p "$stage_dir/include/tracy"
+	cp -a public/* "$stage_dir/include/tracy/"
 popd
 
 # copy license file
