@@ -13,9 +13,19 @@ jobs:
 ##      include:
 ##        - os: windows-2022
 ##          addrsize: "32"
-    continue-on-error: true
+##    continue-on-error: true
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Setup Homebrew Packages
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: brew install ninja
+      - name: Setup Apt Packages
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install ninja-build libdbus-1-dev libfreetype-dev libtbb-dev libwayland-dev wayland-protocols libxcursor-dev libxi-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libxrandr-dev libglvnd-dev libopengl-dev libgl-dev libegl-dev
       - uses: secondlife/action-autobuild@v4
         with:
           addrsize: ${{ matrix.addrsize }}
