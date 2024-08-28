@@ -81,11 +81,16 @@ pushd "build"
 
         darwin*)
             export MACOSX_DEPLOYMENT_TARGET="$LL_BUILD_DARWIN_DEPLOY_TARGET"
+	    export MACOSX_ARCHITECTURES="arm64;x86_64"
+
+	    # force CPM dependencies glfw and freetype to be built statically to make built executables easier to deploy anywhere
+	    patch --directory "$top/$source_dir" -p1 < "$top/tracy-deps-static.patch"
 
             mkdir -p "$stage_dir/bin"
             mkdir -p "capture"
             pushd "capture"
-                cmake "$top/$source_dir/capture" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake "$top/$source_dir/capture" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} -DCMAKE_OSX_ARCHITECTURES="${MACOSX_ARCHITECTURES}"
+
                 cmake --build . --config Release
 
                 cp -a tracy-capture $stage_dir/bin
@@ -93,7 +98,7 @@ pushd "build"
 
             mkdir -p "csvexport"
             pushd "csvexport"
-                cmake "$top/$source_dir/csvexport" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake "$top/$source_dir/csvexport" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} -DCMAKE_OSX_ARCHITECTURES="${MACOSX_ARCHITECTURES}"
                 cmake --build . --config Release
 
                 cp -a tracy-csvexport $stage_dir/bin
@@ -101,7 +106,7 @@ pushd "build"
 
             mkdir -p "profiler"
             pushd "profiler"
-                cmake "$top/$source_dir/profiler" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake "$top/$source_dir/profiler" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} -DCMAKE_OSX_ARCHITECTURES="${MACOSX_ARCHITECTURES}"
                 cmake --build . --config Release
 
                 cp -a tracy-profiler $stage_dir/bin
@@ -109,7 +114,7 @@ pushd "build"
 
             mkdir -p "update"
             pushd "update"
-                cmake "$top/$source_dir/update" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                cmake "$top/$source_dir/update" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} -DCMAKE_OSX_ARCHITECTURES="${MACOSX_ARCHITECTURES}"
                 cmake --build . --config Release
 
                 cp -a tracy-update $stage_dir/bin
