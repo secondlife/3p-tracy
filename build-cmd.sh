@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cd "$(dirname "$0")" 
+cd "$(dirname "$0")"
 
 echo "Building tracy library"
 
@@ -12,7 +12,7 @@ set -e
 set -u
 
 # Check autobuild is around or fail
-if [ -z "$AUTOBUILD" ] ; then 
+if [ -z "$AUTOBUILD" ] ; then
     exit 1
 fi
 
@@ -90,7 +90,8 @@ pushd "build"
             mkdir -p "$stage_dir/bin"
             mkdir -p "capture"
             pushd "capture"
-                cmake "$top/$source_dir/capture" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS}
+                cmake "$top/$source_dir/capture" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS} \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
 
                 cmake --build . --config Release
 
@@ -99,7 +100,8 @@ pushd "build"
 
             mkdir -p "csvexport"
             pushd "csvexport"
-                cmake "$top/$source_dir/csvexport" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS}
+                cmake "$top/$source_dir/csvexport" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS} \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-csvexport $stage_dir/bin
@@ -107,7 +109,8 @@ pushd "build"
 
             mkdir -p "profiler"
             pushd "profiler"
-                cmake "$top/$source_dir/profiler" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS}
+                cmake "$top/$source_dir/profiler" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS} \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-profiler $stage_dir/bin
@@ -115,7 +118,8 @@ pushd "build"
 
             mkdir -p "update"
             pushd "update"
-                cmake "$top/$source_dir/update" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS}
+                cmake "$top/$source_dir/update" -G Ninja ${MACOSX_EXTRA_CMAKE_ARGS} \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-update $stage_dir/bin
@@ -124,10 +128,14 @@ pushd "build"
         ;;
 
         linux*)
+            # force CPM dependencies glfw and freetype to be built statically to make built executables easier to deploy anywhere
+            patch --directory "$top/$source_dir" -p1 < "$top/tracy-deps-static.patch"
+
             mkdir -p "$stage_dir/bin"
             mkdir -p "capture"
             pushd "capture"
-                cmake "$top/$source_dir/capture" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake "$top/$source_dir/capture" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-capture $stage_dir/bin
@@ -135,7 +143,8 @@ pushd "build"
 
             mkdir -p "csvexport"
             pushd "csvexport"
-                cmake "$top/$source_dir/csvexport" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake "$top/$source_dir/csvexport" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-csvexport $stage_dir/bin
@@ -143,7 +152,8 @@ pushd "build"
 
             mkdir -p "profiler"
             pushd "profiler"
-                cmake "$top/$source_dir/profiler" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEGACY=ON
+                cmake "$top/$source_dir/profiler" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEGACY=ON \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-profiler $stage_dir/bin
@@ -151,7 +161,8 @@ pushd "build"
 
             mkdir -p "update"
             pushd "update"
-                cmake "$top/$source_dir/update" -G Ninja -DCMAKE_BUILD_TYPE=Release
+                cmake "$top/$source_dir/update" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                    -DDOWNLOAD_CAPSTONE=ON -DDOWNLOAD_GLFW=ON -DDOWNLOAD_FREETYPE=ON
                 cmake --build . --config Release
 
                 cp -a tracy-update $stage_dir/bin
