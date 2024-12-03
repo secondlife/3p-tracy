@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install ninja-build libdbus-1-dev libfreetype-dev libtbb-dev libwayland-dev wayland-protocols libxcursor-dev libxi-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev libxrandr-dev libglvnd-dev libopengl-dev libgl-dev libegl-dev
-      - uses: secondlife/action-autobuild@v4
+      - uses: secondlife/action-autobuild@v5
         with:
           addrsize: ${{ matrix.addrsize }}
   release:
